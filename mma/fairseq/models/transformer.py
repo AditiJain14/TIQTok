@@ -327,7 +327,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
                 )
                 lm_decoder_softmax_weight.weight = lm_decoder_embed_tokens.weight
             
-            lm_decoder = TransformerOriginalDecoder(
+            lm_decoder = TransformerDecoder(
                                             args,
                                             tgt_dict,
                                             lm_decoder_embed_tokens,
@@ -372,6 +372,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         return_all_hiddens: bool = True,
         features_only: bool = False,
         dual: bool = True,
+        lm_out:bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
     ):
@@ -442,7 +443,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         
         # auxiliary language model
         lm_decoder_out = None
-        if self.lm_decoder is not None:
+        if self.lm_decoder is not None and lm_out:
             lm_decoder_out = self.lm_decoder(
             prev_output_tokens,
             features_only=features_only,
@@ -962,7 +963,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             full_context_alignment=full_context_alignment,
             alignment_layer=alignment_layer,
             alignment_heads=alignment_heads,
-            pre_alpha=pre_alpha,
+            # pre_alpha=pre_alpha,
         )
 
         if not features_only:

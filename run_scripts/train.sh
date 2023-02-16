@@ -1,5 +1,5 @@
 
-ROOT="/local-scratch/nishant/simul/mma_runs"
+ROOT="/cs/natlang-expts/aditi/mma_runs"
 # ROOT="path/to/working/dir"
 
 DATA="${ROOT}/data/vi_en/data-bin"
@@ -14,7 +14,7 @@ USR="./examples/simultaneous_translation"
 
 
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0,1
 
 # infinite lookback
 mma_il_legacy(){
@@ -82,7 +82,7 @@ mma_il(){
     --warmup-init-lr 1e-07 \
     --warmup-updates 4000 \
     --dropout 0.3 \
-    --criterion latency_augmented_label_smoothed_cross_entropy \
+    --criterion latency_augmented_label_smoothed_cross_entropy_cbmi \
     --label-smoothing 0.1 \
     --encoder-attention-heads 4 \
     --decoder-attention-heads 4 \
@@ -93,11 +93,64 @@ mma_il(){
     --single-path \
     --dual-weight 0.0 \
     --save-dir $CKPT \
-    --max-tokens 4000 --update-freq 2 \
+    --max-tokens 3000 --update-freq 6 \
     --best-checkpoint-metric "ppl" \
     --patience 10 --keep-last-epochs 12 \
-    --tensorboard-logdir ${TBOARD} \
-    | tee -a ${TBOARD}/train_log.txt
+    --tensorboard-logdir ${TBOARD} --wandb-project MMAH \
+    --add-language-model \
+    --share-lm-decoder-softmax-embed
+    #| tee -a ${TBOARD}/train_log.txt
+
+}
+#mma-il with lm 
+mma_il_lm(){
+    lambda=$1
+    # name="single_path_latency_${lambda}"
+    name="single_path_lmloss_latency_${lambda}"
+    export WANDB_NAME="${name}"
+
+    CKPT="${EXPT}/infinite/${name}/checkpoints"
+    TBOARD="${EXPT}/infinite/${name}/logs"
+    mkdir -p ${CKPT} ${TBOARD}
+
+    python ${FAIRSEQ}/train.py  --ddp-backend=no_c10d ${DATA} --no-save \
+    --source-lang vi --target-lang en \
+    --log-format simple --log-interval 50 \
+    --arch transformer_monotonic_iwslt_de_en \
+    --user-dir "${USR}" \
+    --simul-type infinite_lookback \
+    --mass-preservation \
+    --optimizer adam \
+    --adam-betas '(0.9, 0.98)' \
+    --clip-norm 0.0 \
+    --lr 5e-4 \
+    --weight-decay 0.0001 \
+    --lr-scheduler 'inverse_sqrt' \
+    --warmup-init-lr 1e-07 \
+    --warmup-updates 4000 \
+    --dropout 0.3 \
+    --criterion latency_augmented_label_smoothed_cross_entropy_cbmi \
+    --label-smoothing 0.1 \
+    --encoder-attention-heads 4 \
+    --decoder-attention-heads 4 \
+    --max-update 100000 \
+    --latency-weight-avg  ${lambda} \
+    --noise-var 1.5 \
+    --left-pad-source \
+    --single-path \
+    --dual-weight 0.0 \
+    --save-dir $CKPT \
+    --max-tokens 3000 --update-freq 6 \
+    --best-checkpoint-metric "ppl" \
+    --patience 10 --keep-last-epochs 12 \
+    --add-language-model \
+    --share-lm-decoder-softmax-embed \
+    --pretrain-steps 1500 \
+    --token-scale 0.1 --sentence-scale 0.1 \
+    #| tee -a ${TBOARD}/train_log.txt
+    
+    --wandb-project MMAH
+    # --tensorboard-logdir ${TBOARD} \
 
 }
 
@@ -291,12 +344,14 @@ wait_info_adaptive_ft(){
 
 
 ###############################################
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0,1
 
-mma_il 0.1
+# mma_il 0.1
 # mma_h
 # mma_wait_k
 # wait_info
 # wait_info_adaptive_ft
 
 # wait_info_adaptive_train
+
+mma_il_lm 0.1

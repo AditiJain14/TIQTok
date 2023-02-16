@@ -1,0 +1,182 @@
+{
+    "os": "Linux-5.4.0-136-generic-x86_64-with-debian-bullseye-sid",
+    "python": "3.6.13",
+    "heartbeatAt": "2023-02-16T22:28:40.186154",
+    "startedAt": "2023-02-16T22:28:39.538885",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--ddp-backend=no_c10d",
+        "/cs/natlang-expts/aditi/mma_runs/data/vi_en/data-bin",
+        "--no-save",
+        "--source-lang",
+        "vi",
+        "--target-lang",
+        "en",
+        "--log-format",
+        "simple",
+        "--log-interval",
+        "50",
+        "--arch",
+        "transformer_monotonic_iwslt_de_en",
+        "--user-dir",
+        "./examples/simultaneous_translation",
+        "--simul-type",
+        "infinite_lookback",
+        "--mass-preservation",
+        "--optimizer",
+        "adam",
+        "--adam-betas",
+        "(0.9, 0.98)",
+        "--clip-norm",
+        "0.0",
+        "--lr",
+        "5e-4",
+        "--weight-decay",
+        "0.0001",
+        "--lr-scheduler",
+        "inverse_sqrt",
+        "--warmup-init-lr",
+        "1e-07",
+        "--warmup-updates",
+        "4000",
+        "--dropout",
+        "0.3",
+        "--criterion",
+        "latency_augmented_label_smoothed_cross_entropy_cbmi",
+        "--label-smoothing",
+        "0.1",
+        "--encoder-attention-heads",
+        "4",
+        "--decoder-attention-heads",
+        "4",
+        "--max-update",
+        "100000",
+        "--latency-weight-avg",
+        "0.1",
+        "--noise-var",
+        "1.5",
+        "--left-pad-source",
+        "--single-path",
+        "--dual-weight",
+        "0.0",
+        "--save-dir",
+        "/cs/natlang-expts/aditi/mma_runs/experiments/vi_en/infinite/single_path_lm_latency_0.1/checkpoints",
+        "--max-tokens",
+        "3000",
+        "--update-freq",
+        "6",
+        "--best-checkpoint-metric",
+        "ppl",
+        "--patience",
+        "10",
+        "--keep-last-epochs",
+        "12",
+        "--tensorboard-logdir",
+        "/cs/natlang-expts/aditi/mma_runs/experiments/vi_en/infinite/single_path_lm_latency_0.1/logs",
+        "--wandb-project",
+        "MMAH",
+        "--add-language-model",
+        "--share-lm-decoder-softmax-embed"
+    ],
+    "state": "running",
+    "program": "/cs/natlang-expts/aditi/mma_runs/mma/train.py",
+    "codePath": "mma/train.py",
+    "git": {
+        "remote": "https://github.com/protonish/mma_runs.git",
+        "commit": "719e642aaeb6e96e6397d83f9724712ceacdcacc"
+    },
+    "email": "aditijain140102@gmail.com",
+    "root": "/cs/natlang-expts/aditi/mma_runs",
+    "host": "cs-nll-25",
+    "username": "aja100",
+    "executable": "/cs/natlang-expts/aditi/miniconda/envs/dualmma2/bin/python",
+    "cpu_count": 6,
+    "cpu_count_logical": 12,
+    "cpu_freq": {
+        "current": 4299.986249999999,
+        "min": 800.0,
+        "max": 4600.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 4299.984,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4300.0,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4299.937,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4299.95,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4300.0,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4299.996,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4299.99,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4300.02,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4300.016,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4299.957,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4300.001,
+            "min": 800.0,
+            "max": 4600.0
+        },
+        {
+            "current": 4299.984,
+            "min": 800.0,
+            "max": 4600.0
+        }
+    ],
+    "disk": {
+        "total": 116.77891540527344,
+        "used": 42.4499397277832
+    },
+    "gpu": "GeForce GTX 1080 Ti",
+    "gpu_count": 2,
+    "gpu_devices": [
+        {
+            "name": "GeForce GTX 1080 Ti",
+            "memory_total": 11721506816
+        },
+        {
+            "name": "GeForce GTX 1080 Ti",
+            "memory_total": 11721506816
+        }
+    ],
+    "memory": {
+        "total": 62.53574752807617
+    }
+}

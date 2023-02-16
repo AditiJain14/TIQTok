@@ -80,7 +80,7 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
             help="weight of dual loss",
         )
 
-    def forward(self, model, sample, reduce=True):
+    def forward(self, model, sample, reduce=True, num_updates=None):
         """Compute the loss for the given sample.
 
         Returns a tuple with three elements:
