@@ -752,7 +752,7 @@ def prune_state_dict(state_dict, model_cfg: Optional[DictConfig]):
 
 
 def load_pretrained_component_from_model(
-    component: Union[FairseqEncoder, FairseqDecoder], checkpoint: str
+    component: Union[FairseqEncoder, FairseqDecoder], checkpoint: str, component_type: str= None
 ):
     """
     Load a pretrained FairseqEncoder or FairseqDecoder from checkpoint into the
@@ -763,21 +763,26 @@ def load_pretrained_component_from_model(
     if not PathManager.exists(checkpoint):
         raise IOError("Model file not found: {}".format(checkpoint))
     state = load_checkpoint_to_cpu(checkpoint)
-    if isinstance(component, FairseqEncoder):
-        component_type = "encoder"
-    elif isinstance(component, FairseqDecoder):
-        component_type = "decoder"
-    else:
-        raise ValueError(
-            "component to load must be either a FairseqEncoder or "
-            "FairseqDecoder. Loading other component types are not supported."
-        )
+    if(component_type==None):
+        if isinstance(component, FairseqEncoder):
+            component_type = "encoder"
+        elif isinstance(component, FairseqDecoder):
+            component_type = "decoder"
+        else:
+            raise ValueError(
+                "component to load must be either a FairseqEncoder or "
+                "FairseqDecoder. Loading other component types are not supported."
+            )
     component_state_dict = OrderedDict()
     for key in state["model"].keys():
         if key.startswith(component_type):
             # encoder.input_layers.0.0.weight --> input_layers.0.0.weight
+            #import ipdb; ipdb.set_trace()
+
             component_subkey = key[len(component_type) + 1 :]
             component_state_dict[component_subkey] = state["model"][key]
+    #import ipdb; ipdb.set_trace()
+
     component.load_state_dict(component_state_dict, strict=True)
     return component
 

@@ -5,6 +5,8 @@
 
 import math
 from typing import Any, Dict, List, Optional, Tuple
+import logging
+
 import torch
 import torch.nn as nn
 from fairseq import utils
@@ -39,6 +41,7 @@ DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 DEFAULT_MIN_PARAMS_TO_WRAP = int(1e8)
 
+logger = logging.getLogger(__name__)
 
 @register_model("transformer")
 class TransformerModel(FairseqEncoderDecoderModel):
@@ -225,6 +228,12 @@ class TransformerModel(FairseqEncoderDecoderModel):
         parser.add_argument("--share-transformer-lm-decoder-softmax-embed", action="store_true", 
                             default=False, help="share transformer decoder embedding and lm decoder embedding \
                             and softmax weights.")
+        parser.add_argument('--use-pretrained-lm', action='store_true', default=False,
+                            help='if True, use path to load pretrained LM Decoder')
+        parser.add_argument('--pretrained-lm-path', type=str,
+                            help='Path for Pretrained LM')
+        parser.add_argument('--freeze-pretrained-lm', action='store_true', default=False,
+                            help='if True, use path to load pretrained LM Decoder')
         # fmt: on
 
     @classmethod
@@ -296,6 +305,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         # auxuliary LM for adaptive training
         lm_decoder = None
         if args.add_language_model:
+            logger.info("Adding auxiliary Language Model.")
             if args.share_transformer_lm_decoder_embed:
                 lm_decoder_embed_tokens = decoder_embed_tokens
                 lm_decoder_softmax_weight = nn.Linear(
@@ -334,7 +344,19 @@ class TransformerModel(FairseqEncoderDecoderModel):
                                             no_encoder_attn=True,
                                             output_projection=lm_decoder_softmax_weight
                                             )
-
+            if args.use_pretrained_lm:
+                logger.info("Loading pretrained LM weights from {}".format(args.pretrained_lm_path))
+                from fairseq import checkpoint_utils
+                #model_path = file_utils.load_archive_file([args.pretrained_lm_path])
+                # models, args, task = checkpoint_utils.load_model_ensemble_and_task(
+                #                model_path, task)
+                model_path=args.pretrained_lm_path
+                lm_decoder = checkpoint_utils.load_pretrained_component_from_model(lm_decoder,model_path,"lm_decoder")
+                # freeze pretrained model
+                for param in lm_decoder.parameters():
+                    logger.info("Freezing pretrained LM weights.")
+                    param.requires_grad = args.freeze_pretrained_lm
+            
         return cls(args, encoder, decoder, back_encoder, back_decoder, lm_decoder)
 
     @classmethod

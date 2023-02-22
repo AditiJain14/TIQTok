@@ -37,7 +37,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterion(
             dual_weight,
         )
         from examples.simultaneous_translation.utils.latency import LatencyTraining
-
+        self.num_updates=-1
         self.eps = label_smoothing
         self.latency_weight_avg = latency_weight_avg
         self.latency_weight_avg_type = latency_weight_avg_type
@@ -106,7 +106,14 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterion(
         latency_loss = self.latency_train.loss(
             attn_list, source_padding_mask, target_padding_mask
         )
-
         loss += latency_loss
+
+        # if self.num_updates > 3000 and self.latency_weight_avg > 0.1:
+        #     continue
+        # else:
+        #     latency_loss = self.latency_train.loss(
+        #     attn_list, source_padding_mask, target_padding_mask
+        # )
+        #     loss += latency_loss
 
         return loss, nll_loss

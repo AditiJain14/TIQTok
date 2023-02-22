@@ -20,6 +20,7 @@ from fairseq.criterions.label_smoothed_cross_entropy_latency_augmented import (
     LatencyAugmentedLabelSmoothedCrossEntropyCriterion
 )
 
+#logger = logging.getLogger(__name__)
 
 def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=True):
     if target.dim() == lprobs.dim() - 1:
@@ -58,6 +59,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         mass_preservation,
         average_method,
         dual_weight,
+        train_only_lm,
         lm_label_smoothing=0.1,
         token_scale=0.0,
         sentence_scale=0.0,
@@ -86,6 +88,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         self.lm_rate = lm_rate
         self.num_updates=-1
         self.finetune_fix_lm=finetune_fix_lm
+        self.train_only_lm=train_only_lm
         self.latency_train = LatencyTraining(
             self.latency_weight_avg,
             self.latency_weight_var,
@@ -134,6 +137,8 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
                             help='lm loss rate')
         parser.add_argument('--finetune-fix-lm', default=False, type=bool, 
                             help='fix language model when finetuning')
+        parser.add_argument('--train-only-lm', action='store_true', 
+                            help='Set to train only LM')
 
     def forward(self, model, sample, reduce=True, num_updates=None):
         """Compute the loss for the given sample.
@@ -156,11 +161,20 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
             assert self.num_updates > -1, "num_updates is not being updated"
 
             loss, nll_loss, lm_loss, lm_nll_loss, log = self.compute_loss(model, net_output, lm_net_output, sample, reduce=reduce)
-            
-            if self.finetune_fix_lm and model.num_updates > self.pretrain_steps:
-                lm_loss = lm_loss.detach()
 
-            loss = loss + self.lm_rate * lm_loss
+            
+            if self.train_only_lm:
+                loss=lm_loss
+
+            else:
+                if self.finetune_fix_lm and self.num_updates > self.pretrain_steps:
+                    lm_loss = lm_loss.detach()
+
+                if self.num_updates < self.pretrain_steps:
+                    loss = loss + self.lm_rate*10 * lm_loss
+                else:
+                #     if(self.num_updates)>3000:
+                    loss = loss + self.lm_rate * lm_loss
         else:
             loss, nll_loss = super().compute_loss(model, net_output, sample, reduce=reduce)
 
@@ -264,7 +278,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         )
 
         num_updates = self.num_updates
-        if num_updates > self.pretrain_steps:
+        if num_updates > self.pretrain_steps and not self.train_only_lm:
             cbmi = torch.log(nmt_probs / (lm_probs + 1e-9))    # in case that lm_probs are too little
             cbmi = cbmi.detach()
             golden_cbmi = torch.gather(cbmi, -1, index=target.unsqueeze(-1))
