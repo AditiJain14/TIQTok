@@ -176,12 +176,9 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
                 #     if(self.num_updates)>3000:
                     loss = loss + self.lm_rate * lm_loss
         else:
-            if(not self.train_only_lm):
-                loss, nll_loss = super().compute_loss(model, net_output, sample, reduce=reduce)
-            else: 
-                #loss and nll_loss here is for LM 
-                _, _, loss, nll_loss, _= self.vanilla_compute_loss(model, net_output, lm_net_output ,sample, reduce=reduce)
-
+                
+            loss, nll_loss = super().compute_loss(model, net_output, sample, reduce=reduce)
+            
 
         # compute backward only if dual_path is set to true
         # TODO: make the changes backward compatible
