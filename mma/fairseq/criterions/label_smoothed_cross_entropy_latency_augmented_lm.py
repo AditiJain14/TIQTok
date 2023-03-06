@@ -167,7 +167,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
                 loss=lm_loss
 
             else:
-                if self.finetune_fix_lm and self.num_updates > self.pretrain_steps:
+                if self.finetune_fix_lm or self.num_updates > self.pretrain_steps:
                     lm_loss = lm_loss.detach()
 
                 if self.num_updates < self.pretrain_steps:

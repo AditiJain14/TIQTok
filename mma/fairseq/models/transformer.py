@@ -216,7 +216,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
             )
         )
         # dual path args
-        parser.add_argument('--single-path', action='store_true',
+        parser.add_argument('--single-path', action='store_true', default=False,
                             help='if True, dont spwan a backward enc+dec')
         # lm args
         parser.add_argument('--add-language-model', action='store_true', default=False,
@@ -354,8 +354,14 @@ class TransformerModel(FairseqEncoderDecoderModel):
                 lm_decoder = checkpoint_utils.load_pretrained_component_from_model(lm_decoder,model_path,"lm_decoder")
                 # freeze pretrained model
                 for param in lm_decoder.parameters():
-                    logger.info("Freezing pretrained LM weights.")
                     param.requires_grad = args.freeze_pretrained_lm
+                logger.info("Freeze pretrained LM weights: {}".format(args.freeze_pretrained_lm))
+                
+                if not args.freeze_pretrained_lm:
+                    for k, p in decoder.named_parameters():
+                        p.requires_grad = True
+                    logger.info("Freezing pretrained LM weights.")
+
             
         return cls(args, encoder, decoder, back_encoder, back_decoder, lm_decoder)
 
@@ -425,6 +431,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         # dual is True by default
         # if dual is False, this will be a single model
         if dual:
+            import ipdb; ipdb.set_trace()
             assert self.back_encoder is not None and self.back_decoder is not None, \
             "Trying to compute backward_model loss but Backward Enc/Dec is None."
 
