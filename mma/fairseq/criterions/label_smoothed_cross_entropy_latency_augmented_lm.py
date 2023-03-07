@@ -64,7 +64,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         token_scale=0.0,
         sentence_scale=0.0,
         pretrain_steps=100000,
-        without_latency_steps=0
+        without_latency_steps=0,
         lm_rate=0.01,
         finetune_fix_lm=False,):
         super().__init__(
