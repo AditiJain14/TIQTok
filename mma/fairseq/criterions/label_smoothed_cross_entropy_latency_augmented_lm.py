@@ -64,6 +64,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         token_scale=0.0,
         sentence_scale=0.0,
         pretrain_steps=100000,
+        without_latency_steps=0
         lm_rate=0.01,
         finetune_fix_lm=False,):
         super().__init__(
@@ -85,6 +86,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         self.token_scale = token_scale
         self.sentence_scale = sentence_scale
         self.pretrain_steps = pretrain_steps
+        self.without_latency_steps = without_latency_steps
         self.lm_rate = lm_rate
         self.num_updates=-1
         self.finetune_fix_lm=finetune_fix_lm
@@ -133,6 +135,8 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
                             help='hyperparameter for sentence cbmi')
         parser.add_argument('--pretrain-steps', default=10000, type=int, 
                             help='step for ending pretrain and starting finetune')
+        parser.add_argument('--without-latency-steps', default=0, type=int, 
+                            help='step for training without latency loss')
         parser.add_argument('--lm-rate', default=0.01, type=float, 
                             help='lm loss rate')
         parser.add_argument('--finetune-fix-lm', default=False, type=bool, 
@@ -335,17 +339,18 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         #loss, nll_loss = self.vanilla_compute_loss(model, net_output, sample, reduce)
         loss, nll_loss, lm_loss, lm_nll_loss, logging_output = self.vanilla_compute_loss(model, net_output, lm_output ,sample, reduce)
         # Obtain the expected alignment
-        attn_list = [item["alpha"] for item in net_output[-1]["attn_list"]]
+        if self.num_updates>self.without_latency_steps:
+            attn_list = [item["alpha"] for item in net_output[-1]["attn_list"]]
 
-        target_padding_mask = model.get_targets(sample, net_output).eq(self.padding_idx)
+            target_padding_mask = model.get_targets(sample, net_output).eq(self.padding_idx)
 
-        source_padding_mask = net_output[-1].get("encoder_padding_mask", None)
+            source_padding_mask = net_output[-1].get("encoder_padding_mask", None)
 
-        # Get latency loss
-        latency_loss = self.latency_train.loss(
-            attn_list, source_padding_mask, target_padding_mask)
+            # Get latency loss
+            latency_loss = self.latency_train.loss(
+                attn_list, source_padding_mask, target_padding_mask)
 
-        loss += latency_loss
+            loss += latency_loss
 
         return loss, nll_loss, lm_loss, lm_nll_loss, logging_output
 
