@@ -9,15 +9,8 @@ import torch
 from fairseq import metrics, utils
 from fairseq.criterions import FairseqCriterion, register_criterion
 
-from examples.simultaneous_translation.utils.latency import (
-    LatencyTraining
-)
 from fairseq.criterions.label_smoothed_cross_entropy import (
-    LabelSmoothedCrossEntropyCriterion,
-)
-
-from fairseq.criterions.label_smoothed_cross_entropy_latency_augmented import (
-    LatencyAugmentedLabelSmoothedCrossEntropyCriterion
+    LabelSmoothedCrossEntropyCriterion
 )
 
 #logger = logging.getLogger(__name__)
@@ -52,19 +45,12 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         label_smoothing,
         ignore_prefix_size,
         report_accuracy,
-        latency_weight_avg,
-        latency_weight_avg_type,
-        latency_weight_var,
-        latency_weight_var_type,
-        mass_preservation,
-        average_method,
         dual_weight,
         train_only_lm,
         lm_label_smoothing=0.1,
         token_scale=0.0,
         sentence_scale=0.0,
         pretrain_steps=100000,
-        without_latency_steps=0,
         lm_rate=0.01,
         finetune_fix_lm=False,):
         super().__init__(
@@ -77,56 +63,38 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         )
         self.eps = label_smoothing
         self.lm_eps = lm_label_smoothing
-        self.latency_weight_avg = latency_weight_avg
-        self.latency_weight_avg_type = latency_weight_avg_type
-        self.latency_weight_var = latency_weight_var
-        self.latency_weight_var_type = latency_weight_var_type
-        self.mass_preservation = mass_preservation
-        self.average_method = average_method
         self.token_scale = token_scale
         self.sentence_scale = sentence_scale
         self.pretrain_steps = pretrain_steps
-        self.without_latency_steps = without_latency_steps
         self.lm_rate = lm_rate
         self.num_updates=-1
         self.finetune_fix_lm=finetune_fix_lm
         self.train_only_lm=train_only_lm
-        self.latency_train = LatencyTraining(
-            self.latency_weight_avg,
-            self.latency_weight_var,
-            self.latency_weight_avg_type,
-            self.latency_weight_var_type,
-            self.mass_preservation,
-            self.average_method,
-        )
-
+        
     @staticmethod
     def add_args(parser):
         super(
-            LatencyAugmentedLabelSmoothedCrossEntropyCriterion,
-            LatencyAugmentedLabelSmoothedCrossEntropyCriterion,
+            LabelSmoothedCrossEntropyCriterion,
+            LabelSmoothedCrossEntropyCriterion,
         ).add_args(parser)
 
         """Add criterion-specific arguments to the parser."""
         # fmt: off
-        parser.add_argument('--label-smoothing', default=0., type=float, metavar='D',
-                            help='epsilon for label smoothing, 0 means no label smoothing')
-        parser.add_argument("--latency-weight-avg", default=0., type=float, metavar='D',
-                            help="Average loss weight")
-        parser.add_argument("--latency-weight-var", default=0., type=float, metavar='D',
-                            help="Variance loss weight")
-        parser.add_argument("--latency-weight-avg-type", default="differentiable_average_lagging",
-                            help="Statistics for Average loss type")
-        parser.add_argument("--latency-weight-var-type", default="variance_delay",
-                            help="Statistics for variance loss type")
-        parser.add_argument("--average-method", default="weighted_average",
-                            help="Average loss type")
-        parser.add_argument('--report-accuracy', action='store_true',
-                            help='report accuracy metric')
-        parser.add_argument('--ignore-prefix-size', default=0, type=int,
-                            help='Ignore first N tokens')
+        # parser.add_argument('--label-smoothing', default=0., type=float, metavar='D',
+        #                     help='epsilon for label smoothing, 0 means no label smoothing')
+        # parser.add_argument('--report-accuracy', action='store_true',
+        #                     help='report accuracy metric')
+        # parser.add_argument('--ignore-prefix-size', default=0, type=int,
+        #                     help='Ignore first N tokens')
         # fmt: on
         #args for CBMI
+        parser.add_argument(
+            "--dual-weight",
+            default=0.0,
+            type=float,
+            metavar="D",
+            help="weight of dual loss",
+        )
         parser.add_argument('--lm-label-smoothing', default=0.1, type=float, 
                             help='epsilon for language model label smoothing, 0 means no label smoothing')
         parser.add_argument('--token-scale', default=0.0, type=float, 
@@ -135,8 +103,6 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
                             help='hyperparameter for sentence cbmi')
         parser.add_argument('--pretrain-steps', default=10000, type=int, 
                             help='step for ending pretrain and starting finetune')
-        parser.add_argument('--without-latency-steps', default=0, type=int, 
-                            help='step for training without latency loss')
         parser.add_argument('--lm-rate', default=0.01, type=float, 
                             help='lm loss rate')
         parser.add_argument('--finetune-fix-lm', default=False, type=bool, 
@@ -249,7 +215,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         return loss, sample_size, logging_output
     
 
-    def vanilla_compute_loss(self, model, net_output, lm_output ,sample, reduce=True):
+    def compute_loss(self, model, net_output, lm_output ,sample, reduce=True):
         # lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
         
         nmt_logits = net_output[0]
@@ -333,26 +299,6 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
             nmt_nll_loss = nmt_nll_loss.sum()
 
         return nmt_loss, nmt_nll_loss, lm_loss, lm_nll_loss, logging_output
-
-    def compute_loss(self, model, net_output, lm_output, sample, reduce=True):
-        # Compute cross entropy loss first
-        #loss, nll_loss = self.vanilla_compute_loss(model, net_output, sample, reduce)
-        loss, nll_loss, lm_loss, lm_nll_loss, logging_output = self.vanilla_compute_loss(model, net_output, lm_output ,sample, reduce)
-        # Obtain the expected alignment
-        if self.num_updates>self.without_latency_steps:
-            attn_list = [item["alpha"] for item in net_output[-1]["attn_list"]]
-
-            target_padding_mask = model.get_targets(sample, net_output).eq(self.padding_idx)
-
-            source_padding_mask = net_output[-1].get("encoder_padding_mask", None)
-
-            # Get latency loss
-            latency_loss = self.latency_train.loss(
-                attn_list, source_padding_mask, target_padding_mask)
-
-            loss += latency_loss
-
-        return loss, nll_loss, lm_loss, lm_nll_loss, logging_output
 
     def compute_accuracy(self, model, net_output, sample):
         lprobs, target = self.get_lprobs_and_target(model, net_output, sample)

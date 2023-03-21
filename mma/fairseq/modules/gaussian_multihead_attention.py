@@ -19,7 +19,7 @@ import pdb
 
 
 @with_incremental_state
-class MultiheadAttention(nn.Module):
+class GaussianMultiheadAttention(nn.Module):
     """Multi-headed attention.
 
     See "Attention Is All You Need" for more details.
@@ -29,6 +29,7 @@ class MultiheadAttention(nn.Module):
         self,
         embed_dim,
         num_heads,
+        delta=1,
         kdim=None,
         vdim=None,
         dropout=0.0,
@@ -84,7 +85,15 @@ class MultiheadAttention(nn.Module):
             self.bias_v = Parameter(torch.Tensor(1, 1, embed_dim))
         else:
             self.bias_k = self.bias_v = None
+        
+        projection_unit = self.embed_dim
+        self.wp = Parameter(torch.Tensor(self.embed_dim, projection_unit))
+        self.vp = Parameter(torch.Tensor(projection_unit, 1))
 
+        self.delta = delta
+        self.max_len = 1100
+        self.index_mask = torch.arange(0, self.max_len, device="cuda")
+        self.eps = 1e-2
         self.add_zero_attn = add_zero_attn
 
         self.reset_parameters()
@@ -105,6 +114,9 @@ class MultiheadAttention(nn.Module):
             nn.init.xavier_uniform_(self.k_proj.weight)
             nn.init.xavier_uniform_(self.v_proj.weight)
             nn.init.xavier_uniform_(self.q_proj.weight)
+        
+        nn.init.xavier_uniform_(self.vp)
+        nn.init.xavier_uniform_(self.wp)
 
         nn.init.xavier_uniform_(self.out_proj.weight)
         if self.out_proj.bias is not None:
@@ -124,6 +136,8 @@ class MultiheadAttention(nn.Module):
         need_weights: bool = True,
         static_kv: bool = False,
         attn_mask: Optional[Tensor] = None,
+        step=None,
+        pre_d=None,
         before_softmax: bool = False,
         need_head_weights: bool = False,
     ) -> Tuple[Tensor, Optional[Tensor]]:
@@ -154,6 +168,8 @@ class MultiheadAttention(nn.Module):
         src_len = tgt_len
         assert embed_dim == self.embed_dim
         assert list(query.size()) == [tgt_len, bsz, embed_dim]
+        #adding from Gaussian 
+        
         if key is not None:
             src_len, key_bsz, _ = key.size()
             if not torch.jit.is_scripting():
@@ -194,7 +210,6 @@ class MultiheadAttention(nn.Module):
                 k_proj_weight=self.k_proj.weight,
                 v_proj_weight=self.v_proj.weight,
             )
-
         if incremental_state is not None:
             saved_state = self._get_input_buffer(incremental_state)
             if saved_state is not None and "prev_key" in saved_state:
@@ -287,7 +302,7 @@ class MultiheadAttention(nn.Module):
             if "prev_key_padding_mask" in saved_state:
                 prev_key_padding_mask = saved_state["prev_key_padding_mask"]
             assert k is not None and v is not None
-            key_padding_mask = MultiheadAttention._append_prev_key_padding_mask(
+            key_padding_mask = GaussianMultiheadAttention._append_prev_key_padding_mask(
                 key_padding_mask=key_padding_mask,
                 prev_key_padding_mask=prev_key_padding_mask,
                 batch_size=bsz,
@@ -357,14 +372,58 @@ class MultiheadAttention(nn.Module):
                 attn_weights = attn_weights.masked_fill(key_padding_mask, float("-inf"))
                 attn_weights = attn_weights.transpose(0, 2)
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+        # predict incremental step dp
+        h = (
+            q.contiguous()
+            .view(bsz, self.num_heads, tgt_len, self.head_dim)
+            .transpose(1, 2)
+            .contiguous()
+            .view(bsz * tgt_len, self.num_heads * self.head_dim)
+        )
+        dp = torch.exp(torch.mm(torch.tanh(torch.mm(h, self.wp)), self.vp))
+        dp = (
+            dp.contiguous()
+            .view(bsz, tgt_len)
+            .unsqueeze(1)
+            .repeat(1, self.num_heads, 1)
+            .contiguous()
+            .view(bsz * self.num_heads, tgt_len)
+        )
+        dp = torch.cat((torch.zeros(dp.size(0), 1).type_as(dp), dp[:, 1:]), dim=1)
+        # calculate the aligned source position p
+        p = torch.cumsum(dp, dim=1)
+        # Avoid p too small during training, for stable training
+        p = p.clamp(0.9, float(self.max_len))
 
-        if before_softmax:
-            return attn_weights, v
+        # calculate the Gaussian distribution (prior)
+        p = p.unsqueeze(2)
+        varr = p / 2
+        index_mask = (
+            self.index_mask[:src_len]
+            .unsqueeze(0)
+            .unsqueeze(1)
+            .repeat(bsz * self.num_heads, 1, 1)
+            .type_as(p)
+        )
+        alpha = torch.exp(
+            -0.5 * torch.mul((p - index_mask) / varr, (p - index_mask) / varr)
+        )
+        # mask out the future source
+        ends = (p + self.delta).ceil()
+        position_in_attended_cut = index_mask
+        future_mask = position_in_attended_cut < ends
+        alpha = torch.mul(alpha, future_mask.float())
+        attn_weights = attn_weights.masked_fill(~future_mask, float("-inf"))
+        # if before_softmax:
+        #     return attn_weights, v
 
         attn_weights_float = utils.softmax(
             attn_weights, dim=-1, onnx_trace=self.onnx_trace
         )
+        # calculate the final attention (posterior)
         attn_weights = attn_weights_float.type_as(attn_weights)
+        attn_weights = torch.mul(attn_weights, alpha)
+        attn_weights = attn_weights / attn_weights.sum(-1, keepdim=True)
         attn_probs = self.dropout_module(attn_weights)
 
         assert v is not None
@@ -385,8 +444,13 @@ class MultiheadAttention(nn.Module):
             if not need_head_weights:
                 # average attention weights over heads
                 attn_weights = attn_weights.mean(dim=0)
+        
+        if step is not None:
+            return attn, attn_weights, p
+        else:
+            return attn, attn_weights, None
 
-        return attn, attn_weights
+        # return attn, attn_weights
 
     @staticmethod
     def _append_prev_key_padding_mask(

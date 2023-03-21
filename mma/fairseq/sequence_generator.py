@@ -277,9 +277,10 @@ class SequenceGenerator(nn.Module):
             .long()
             .fill_(self.pad)
         )  # +2 for eos and pad
+    
+
         tokens[:, 0] = self.eos if bos_token is None else bos_token
         attn: Optional[Tensor] = None
-
         # A list that indicates candidates that should be ignored.
         # For example, suppose we're sampling and have already finalized 2/5
         # samples. Then cands_to_ignore would mark 2 positions as being ignored,
@@ -346,19 +347,25 @@ class SequenceGenerator(nn.Module):
                 padding_length = padding_length.index_select(0, reorder_state)
                 source_length = source_length.index_select(0, reorder_state)
 
-            lprobs, avg_attn_scores, states = self.model.forward_decoder(
+            # lprobs, avg_attn_scores, states
+            lprobs, attn_weight, d = self.model.forward_decoder(
                 tokens[:, : step + 1],
                 encoder_outs,
                 incremental_states,
-                self.temperature,
+                temperature=self.temperature,
+                step=step,
             )
-            attn_list = [
-                states["attn_list"][i]["alpha"] for i in range(len(states["attn_list"]))
-            ]
-            alpha = torch.cat(attn_list, dim=1)
+            # attn_list = [
+            #     states["attn_list"][i]["alpha"] for i in range(len(states["attn_list"]))
+            # ]
+            # alpha = torch.cat(attn_list, dim=1)
 
-            read = alpha[:, :, -1, :].max(dim=-1, keepdim=True)[1]
-            read = read.max(dim=1, keepdim=False)[0]
+            # read = alpha[:, :, -1, :].max(dim=-1, keepdim=True)[1]
+            # read = read.max(dim=1, keepdim=False)[0]
+
+            read = (
+                (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=False)[0]
+            ) 
             if reads is None:
                 reads = read
             else:
@@ -820,6 +827,7 @@ class EnsembleModel(nn.Module):
         encoder_outs: List[Dict[str, List[Tensor]]],
         incremental_states: List[Dict[str, Dict[str, Optional[Tensor]]]],
         temperature: float = 1.0,
+        step=None,
     ):
         log_probs = []
         avg_attn: Optional[Tensor] = None
@@ -829,7 +837,7 @@ class EnsembleModel(nn.Module):
                 encoder_out = encoder_outs[i]
             # decode each model
             if hasattr(model, "decoder"):
-                decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out)
+                decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out,step=step)
                 # decoder_out = model.back_decoder.forward(tokens, encoder_out=encoder_out)
             else:
                 decoder_out = model.forward(tokens)
@@ -841,12 +849,20 @@ class EnsembleModel(nn.Module):
                 decoder_out[0][:, -1:, :].div_(temperature),
                 None if decoder_len <= 1 else decoder_out[1],
             )
+            attn = decoder_out[1]
+            d = decoder_out[2]
+            if type(attn) is dict:
+                attn = attn.get("attn", None)
+            if attn is not None:
+                attn = attn[:, :, -1, :]
+
             probs = model.get_normalized_probs(
                 decoder_out_tuple, log_probs=True, sample=None
             )
             probs = probs[:, -1, :]
+
             if self.models_size == 1:
-                return probs, attn, decoder_out[-1]
+                return probs, attn, d
 
             log_probs.append(probs)
             if attn is not None:

@@ -359,6 +359,13 @@ def _main(cfg: DictConfig, output_file):
                         "D-{}\t{}\t{}".format(sample_id, score, detok_hypo_str),
                         file=output_file,
                     )
+                    #print read-write actions
+                    print(
+                        "RW-{}\t{}\t{}".format(
+                            sample_id, np.around(RW2AL(rws[i]), 2), rws[i]
+                        ),
+                        file=output_file,
+                    )
                     print(
                         "P-{}\t{}".format(
                             sample_id,

@@ -61,7 +61,7 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         label_smoothing,
         ignore_prefix_size=0,
         report_accuracy=False,
-        dual_weight=1.0,
+        dual_weight=0.0,
     ):
         super().__init__(task)
         self.sentence_avg = sentence_avg
@@ -74,10 +74,29 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
     def add_args(parser):
         parser.add_argument(
             "--dual-weight",
-            default=1.0,
+            default=0.0,
             type=float,
             metavar="D",
             help="weight of dual loss",
+        )
+        parser.add_argument(
+            "--label-smoothing",
+            default=0.0,
+            type=float,
+            metavar="D",
+            help="epsilon for label smoothing, 0 means no label smoothing",
+        )
+        parser.add_argument(
+            "--ignore_prefix_size",
+            default=0,
+            type=int,
+            help="ignore first N tokens",
+        )
+        parser.add_argument(
+            "--report-accuracy",
+            default=False,
+            type=bool,
+            help="report accuracy metric",
         )
 
     def forward(self, model, sample, reduce=True, num_updates=None):
@@ -95,7 +114,7 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         net_output, back_net_output, dual_loss, back_data, lm_net_output = model(**sample["net_input"], dual=dual_path)
 
         # get forward model loss
-        loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
+        loss, nll_loss = self.compute_loss(model, net_output[:2], sample, reduce=reduce)
 
         # compute backward only if dual_path is set to true
         if dual_path:
