@@ -282,6 +282,8 @@ def _main(cfg: DictConfig, output_file):
         )
         num_generated_tokens = sum(len(h[0]["tokens"]) for h in hypos)
         gen_timer.stop(num_generated_tokens)
+
+        import ipdb;ipdb.set_trace()
         rws.extend([d201(g[i], src_lens[i]) for i in range(len(g))])
 
         for i, sample_id in enumerate(sample["id"].tolist()):

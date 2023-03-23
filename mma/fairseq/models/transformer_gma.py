@@ -422,7 +422,6 @@ class TransformerGMAModel(FairseqEncoderDecoderModel):
         encoder_out = self.encoder(
             src_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
         )
-        # import ipdb; ipdb.set_trace()
         decoder_out = self.decoder(
             prev_output_tokens,
             encoder_out=encoder_out,
@@ -441,7 +440,6 @@ class TransformerGMAModel(FairseqEncoderDecoderModel):
         # dual is True by default
         # if dual is False, this will be a single model
         if dual:
-            import ipdb; ipdb.set_trace()
             assert self.back_encoder is not None and self.back_decoder is not None, \
             "Trying to compute backward_model loss but Backward Enc/Dec is None."
 
@@ -702,10 +700,9 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
             full_context_alignment=full_context_alignment,
             alignment_layer=alignment_layer,
             alignment_heads=alignment_heads,
-            step=step
+            step=step,
             # pre_alpha=pre_alpha,
         )
-
         if not features_only:
             x = self.output_layer(x)
         if step is None:
@@ -722,7 +719,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
         full_context_alignment: bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
-        step=None
+        step=None,
     ):
         return self.extract_features_scriptable(
             prev_output_tokens,
@@ -731,7 +728,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
             full_context_alignment,
             alignment_layer,
             alignment_heads,
-            step
+            step,
         )
 
     """
@@ -820,7 +817,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
             self_attn_padding_mask = prev_output_tokens.eq(self.padding_idx)
 
         # decoder layers
-        attn: Optional[Tensor] = None
+        # layer_attn: Optional[Tensor] = None
         inner_states: List[Optional[Tensor]] = [x]
         ds = []
         attn_list = []
@@ -838,16 +835,19 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
                 self_attn_mask=self_attn_mask,
                 self_attn_padding_mask=self_attn_padding_mask,
                 need_attn=bool((idx == alignment_layer)),
-                need_head_weights=bool((idx == alignment_layer)),
+                need_head_weights=bool((idx == alignment_layer)) if self.training else True,
                 step=step,
             )
-            attn_list.append(attn)
             inner_states.append(x)
             if step is not None:
                 ds.append(d)
-
+            #and self.training
             if layer_attn is not None and idx == alignment_layer:
                 attn = layer_attn.float().to(x)
+
+            # elif layer_attn is not None and not self.training:
+            #     attn = layer_attn.float().to(x)
+            #     attn_list.append(layer_attn)
 
         if attn is not None:
             if alignment_heads is not None:
@@ -855,19 +855,23 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
 
             # average probabilities over heads
             attn = attn.mean(dim=0)
+        
+            attn_list.append(attn)
 
         if self.layer_norm is not None:
             x = self.layer_norm(x)
 
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
-
         if self.project_out_dim is not None:
             x = self.project_out_dim(x)
         if step is not None:
+            # import ipdb; ipdb.set_trace()
+            # torch.cat(attn_list, dim=1) works with og GMA codebase where attn --> b x h x tlen x slen
+            # but we have h x b x tlen x slen because of transpose in attn_weight before returning
             return (
                 x,
-                {"attn": torch.cat(attn_list, dim=1), "inner_states": inner_states},
+                {"attn": torch.cat(attn_list, dim=0), "inner_states": inner_states},
                 torch.cat(ds, dim=1),
             )
         else:

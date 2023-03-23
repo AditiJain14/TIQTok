@@ -435,16 +435,19 @@ class GaussianMultiheadAttention(nn.Module):
             attn = attn.contiguous().view(tgt_len, bsz, embed_dim)
         else:
             attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
-        attn = self.out_proj(attn)
+        attn = self.out_proj(attn) # [tgt_len, bsz, h_dim]
+
         attn_weights: Optional[Tensor] = None
+
         if need_weights:
             attn_weights = attn_weights_float.view(
                 bsz, self.num_heads, tgt_len, src_len
             ).transpose(1, 0)
+            # import ipdb; ipdb.set_trace()
             if not need_head_weights:
                 # average attention weights over heads
                 attn_weights = attn_weights.mean(dim=0)
-        
+        # import ipdb; ipdb.set_trace()
         if step is not None:
             return attn, attn_weights, p
         else:

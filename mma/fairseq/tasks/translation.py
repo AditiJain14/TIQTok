@@ -432,6 +432,7 @@ class TranslationTask(FairseqTask):
             for i in range(EVAL_BLEU_ORDER):
                 logging_output["_bleu_counts_" + str(i)] = bleu.counts[i]
                 logging_output["_bleu_totals_" + str(i)] = bleu.totals[i]
+        
         return loss, sample_size, logging_output
 
     def reduce_metrics(self, logging_outputs, criterion):
@@ -460,18 +461,24 @@ class TranslationTask(FairseqTask):
 
                 def compute_bleu(meters):
                     import inspect
-                    import sacrebleu
+                    try:
+                        from sacrebleu.metrics import BLEU
+                        comp_bleu = BLEU.compute_bleu
+                    except ImportError:
+                        # compatibility API for sacrebleu 1.x
+                        import sacrebleu
+                        comp_bleu = sacrebleu.compute_bleu
 
-                    fn_sig = inspect.getfullargspec(sacrebleu.compute_bleu)[0]
+                    fn_sig = inspect.getfullargspec(comp_bleu)[0]
                     if "smooth_method" in fn_sig:
                         smooth = {"smooth_method": "exp"}
                     else:
                         smooth = {"smooth": "exp"}
-                    bleu = sacrebleu.compute_bleu(
+                    bleu = comp_bleu(
                         correct=meters["_bleu_counts"].sum,
                         total=meters["_bleu_totals"].sum,
-                        sys_len=meters["_bleu_sys_len"].sum,
-                        ref_len=meters["_bleu_ref_len"].sum,
+                        sys_len=int(meters["_bleu_sys_len"].sum),
+                        ref_len=int(meters["_bleu_ref_len"].sum),
                         **smooth,
                     )
                     return round(bleu.score, 2)
@@ -495,6 +502,63 @@ class TranslationTask(FairseqTask):
     def _inference_with_bleu(self, generator, sample, model):
         import sacrebleu
 
+        # average lagging
+        def d201(d, src):
+            # print("+++",d)
+            s = "0 " * int(d[0] + 1) + "1 "
+            for i in range(1, len(d)):
+                s = s + "0 " * int((min(d[i], src - 1) - min(d[i - 1], src - 1))) + "1 "
+            if src > d[-1] + 1:
+                s = s + "0 " * (src - d[-1] - 1)
+            return s
+
+        def compute_delay(rw, is_weight_ave=False):
+            CWs, ALs, APs, DALs, Lsrc = [], [], [], [], []
+            for line in rw:
+                line = line.strip()
+                al_ans = RW2AL(line, add_eos=False)
+                if al_ans is not None:
+                    ALs.append(al_ans)
+                    Lsrc.append(line.count("0"))
+
+            AL = np.average(ALs) if is_weight_ave else np.average(ALs, weights=Lsrc)
+            
+            return AL
+
+        # s is RW sequence, in format of '0 0 0 1 1 0 1 0 1', or 'R R R W W R W R W', flexible on blank/comma
+        def RW2AL(s, add_eos=False):
+            trantab = str.maketrans("RrWw", "0011")
+            if isinstance(s, str):
+                s = s.translate(trantab).replace(" ", "").replace(",", "")
+                if (
+                    add_eos
+                ):  # to add eos token for both src and tgt if you did not do it during RW generating
+                    idx = s.rfind("0")
+                    s = (
+                        s[: idx + 1] + "0" + s[idx + 1 :] + "1"
+                    )  # remove last 0/1(<eos>) to keep actuall setence length
+                    # s = (s[:idx]+s[idx+1:])[:-1]  # remove last 0/1(<eos>) to keep actuall setence length
+            else:
+                return None
+            x, y = s.count("0"), s.count("1")
+            if x == 0 or y == 0:
+                return 0
+
+            count = 0
+            rate = y / x
+            curr = []
+            for i in s:
+                if i == "0":
+                    count += 1
+                else:
+                    curr.append(count)
+                if i == "1" and count == x:
+                    break
+            y1 = len(curr)
+            diag = [(t - 1) / rate for t in range(1, y1 + 1)]
+            return sum(l1 - l2 for l1, l2 in zip(curr, diag)) / y1
+
+
         def decode(toks, escape_unk=False):
             s = self.tgt_dict.string(
                 toks.int().cpu(),
@@ -510,8 +574,9 @@ class TranslationTask(FairseqTask):
                 s = self.tokenizer.decode(s)
             return s
 
-        gen_out = self.inference_step(generator, [model], sample, prefix_tokens=None)
-        hyps, refs = [], []
+        gen_out, g, src_lens = self.inference_step(generator, [model], sample, prefix_tokens=None)
+        hyps, refs, rws = [], [], []
+        # rws.extend([d201(g[i], src_lens[i]) for i in range(len(g))])
         for i in range(len(gen_out)):
             hyps.append(decode(gen_out[i][0]["tokens"]))
             refs.append(
@@ -520,6 +585,10 @@ class TranslationTask(FairseqTask):
                     escape_unk=True,  # don't count <unk> as matches to the hypo
                 )
             )
+        
+        # avg_lag = compute_delay(rws, is_weight_ave=True)
+        # logger.info("Average Lagging: {}".format(avg_lag))
+
         if self.cfg.eval_bleu_print_samples:
             logger.info("example hypothesis: " + hyps[0])
             logger.info("example reference: " + refs[0])
@@ -527,3 +596,5 @@ class TranslationTask(FairseqTask):
             return sacrebleu.corpus_bleu(hyps, [refs], tokenize="none")
         else:
             return sacrebleu.corpus_bleu(hyps, [refs])
+    
+    

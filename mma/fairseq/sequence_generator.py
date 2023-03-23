@@ -346,7 +346,6 @@ class SequenceGenerator(nn.Module):
                 reads = reads.index_select(0, reorder_state)
                 padding_length = padding_length.index_select(0, reorder_state)
                 source_length = source_length.index_select(0, reorder_state)
-
             # lprobs, avg_attn_scores, states
             lprobs, attn_weight, d = self.model.forward_decoder(
                 tokens[:, : step + 1],
@@ -364,8 +363,9 @@ class SequenceGenerator(nn.Module):
             # read = read.max(dim=1, keepdim=False)[0]
 
             read = (
-                (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=False)[0]
+                (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=True)[0]
             ) 
+            # import ipdb;ipdb.set_trace()
             if reads is None:
                 reads = read
             else:
@@ -403,12 +403,13 @@ class SequenceGenerator(nn.Module):
                 lprobs[:, self.eos] = -math.inf
 
             # Record attention scores, only support avg_attn_scores is a Tensor
-            if avg_attn_scores is not None:
+            # import ipdb;ipdb.set_trace()
+            if attn_weight is not None:
                 if attn is None:
                     attn = torch.empty(
-                        bsz * beam_size, avg_attn_scores.size(1), max_len + 2
+                        bsz * beam_size, attn_weight.size(1), max_len + 2
                     ).to(scores)
-                attn[:, :, step + 1].copy_(avg_attn_scores)
+                attn[:, :, step + 1].copy_(attn_weight)
 
             scores = scores.type_as(lprobs)
             eos_bbsz_idx = torch.empty(0).to(
@@ -853,8 +854,9 @@ class EnsembleModel(nn.Module):
             d = decoder_out[2]
             if type(attn) is dict:
                 attn = attn.get("attn", None)
+            # import ipdb; ipdb.set_trace()
             if attn is not None:
-                attn = attn[:, :, -1, :]
+                attn = attn[:, -1, :]
 
             probs = model.get_normalized_probs(
                 decoder_out_tuple, log_probs=True, sample=None
