@@ -553,6 +553,7 @@ class TransformerDecoderLayerGMA(nn.Module):
         step=None,
         need_attn: bool = False,
         need_head_weights: bool = False,
+        delta: float = 1.0,
     ):
         """
         Args:
@@ -645,9 +646,10 @@ class TransformerDecoderLayerGMA(nn.Module):
                 incremental_state=incremental_state,
                 static_kv=True,
                 # need_weights=need_attn or (not self.training and self.need_attn),
-                need_weights= (not self.training and self.need_attn),
+                need_weights=need_attn,
                 step=step,
                 need_head_weights=need_head_weights,
+                delta=delta,
             )
             x = self.dropout_module(x)
             x = self.residual_connection(x, residual)

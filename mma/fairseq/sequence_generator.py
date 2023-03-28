@@ -195,6 +195,7 @@ class SequenceGenerator(nn.Module):
         prefix_tokens: Optional[Tensor] = None,
         constraints: Optional[Tensor] = None,
         bos_token: Optional[int] = None,
+        delta: Optional[float] = None,
     ):
         incremental_states = torch.jit.annotate(
             List[Dict[str, Dict[str, Optional[Tensor]]]],
@@ -206,6 +207,8 @@ class SequenceGenerator(nn.Module):
         net_input = sample["net_input"]
 
         padding_length = net_input["src_tokens"].size(1) - net_input["src_lengths"]
+
+        # import ipdb;ipdb.set_trace()
 
         if "src_tokens" in net_input:
             src_tokens = net_input["src_tokens"]
@@ -353,6 +356,7 @@ class SequenceGenerator(nn.Module):
                 incremental_states,
                 temperature=self.temperature,
                 step=step,
+                delta=delta,
             )
             # attn_list = [
             #     states["attn_list"][i]["alpha"] for i in range(len(states["attn_list"]))
@@ -361,10 +365,49 @@ class SequenceGenerator(nn.Module):
 
             # read = alpha[:, :, -1, :].max(dim=-1, keepdim=True)[1]
             # read = read.max(dim=1, keepdim=False)[0]
+            
+            # import ipdb;ipdb.set_trace()
+
+            # attn_weight.shape = [layers x bsz, heads, src_len]
+            layers = 6
+            num_heads = 4
+
+
+            # attn_weight_lh = (
+            #     attn_weight.contiguous()
+            #     .view(layers, bsz, num_heads, -1)
+            #     .contiguous()
+            #     .view(bsz, layers, num_heads, -1)
+            # )
+
+            read_type = {}
+            
+            # aditi's
+            # read = (
+            #     (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=0,keepdim=False)[0].max(dim=1, keepdim=False)[0]
+            # )
 
             read = (
-                (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=True)[0]
-            ) 
+                (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=False)[0]
+            )
+
+            # independent: num_layers x num_heads options to pick max attn distance from
+            # read = (
+            #     (attn_weight_lh.view(bsz, layers*num_heads, -1) > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=False)[0]
+            # ) 
+
+            # share among heads: layers x 1 options to pick max attn distance from
+            # import ipdb;ipdb.set_trace()
+            # read= (
+            #     (attn_weight_lh > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=False)[0]
+            # )
+
+            # read = (
+            #     (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=False)[0]
+            #     # (attn_weight > 0).sum(dim=-1, keepdim=True)[:,-1,:]
+            # ) 
+            # read = read.max(dim=0, keepdim=True)[0].transpose(0, 1)
+            # import ipdb; ipdb.set_trace()
             # import ipdb;ipdb.set_trace()
             if reads is None:
                 reads = read
@@ -404,12 +447,16 @@ class SequenceGenerator(nn.Module):
 
             # Record attention scores, only support avg_attn_scores is a Tensor
             # import ipdb;ipdb.set_trace()
-            if attn_weight is not None:
-                if attn is None:
-                    attn = torch.empty(
-                        bsz * beam_size, attn_weight.size(1), max_len + 2
-                    ).to(scores)
-                attn[:, :, step + 1].copy_(attn_weight)
+
+            if attn_weight.dim() > 2:
+                attn = None
+            else:
+                if attn_weight is not None:
+                    if attn is None:
+                        attn = torch.empty(
+                            bsz * beam_size, attn_weight.size(1), max_len + 2
+                        ).to(scores)
+                    attn[:, :, step + 1].copy_(attn_weight)
 
             scores = scores.type_as(lprobs)
             eos_bbsz_idx = torch.empty(0).to(
@@ -451,6 +498,8 @@ class SequenceGenerator(nn.Module):
                 cand_bbsz_idx[:, :beam_size], mask=eos_mask[:, :beam_size]
             )
 
+            # import ipdb;ipdb.set_trace()
+
             finalized_sents: List[int] = []
             if eos_bbsz_idx.numel() > 0:
                 eos_scores = torch.masked_select(
@@ -487,7 +536,7 @@ class SequenceGenerator(nn.Module):
                 break
             if self.search.stop_on_max_len and step >= max_len:
                 break
-            assert step < max_len, f"{step} < {max_len}"
+            assert step <= max_len, f"{step} < {max_len}"
 
             # Remove finalized sentences (ones for which {beam_size}
             # finished hypotheses have been generated) from the batch.
@@ -829,6 +878,7 @@ class EnsembleModel(nn.Module):
         incremental_states: List[Dict[str, Dict[str, Optional[Tensor]]]],
         temperature: float = 1.0,
         step=None,
+        delta=0.1,
     ):
         log_probs = []
         avg_attn: Optional[Tensor] = None
@@ -838,7 +888,7 @@ class EnsembleModel(nn.Module):
                 encoder_out = encoder_outs[i]
             # decode each model
             if hasattr(model, "decoder"):
-                decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out,step=step)
+                decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out, step=step, delta=delta)
                 # decoder_out = model.back_decoder.forward(tokens, encoder_out=encoder_out)
             else:
                 decoder_out = model.forward(tokens)
@@ -856,7 +906,8 @@ class EnsembleModel(nn.Module):
                 attn = attn.get("attn", None)
             # import ipdb; ipdb.set_trace()
             if attn is not None:
-                attn = attn[:, -1, :]
+                # attn = attn[:, :, :, -1, :]
+                attn = attn[:, :, -1, :]
 
             probs = model.get_normalized_probs(
                 decoder_out_tuple, log_probs=True, sample=None

@@ -673,6 +673,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
         src_lengths: Optional[Any] = None,
         return_all_hiddens: bool = False,
         pre_alpha=None,
+        delta=None,
     ):
         """
         Args:
@@ -701,6 +702,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
             alignment_layer=alignment_layer,
             alignment_heads=alignment_heads,
             step=step,
+            delta=delta,
             # pre_alpha=pre_alpha,
         )
         if not features_only:
@@ -720,6 +722,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
         step=None,
+        delta=None,
     ):
         return self.extract_features_scriptable(
             prev_output_tokens,
@@ -729,6 +732,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
             alignment_layer,
             alignment_heads,
             step,
+            delta,
         )
 
     """
@@ -746,6 +750,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
         step=None,
+        delta=None,
     ):
         """
         Similar to *forward* but only return features.
@@ -834,16 +839,22 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
                 incremental_state,
                 self_attn_mask=self_attn_mask,
                 self_attn_padding_mask=self_attn_padding_mask,
-                need_attn=bool((idx == alignment_layer)),
-                need_head_weights=bool((idx == alignment_layer)) if self.training else True,
+                need_attn=bool((idx == alignment_layer)) if self.training else True,
+                need_head_weights=bool((idx == alignment_layer)) if self.training else False,
                 step=step,
+                delta=delta,
             )
             inner_states.append(x)
+            # in GMA, attn_weight shape: bsz, heads, tgt, src
+            # our attn_weight shape: heads, bsz, tgt, src
+            attn_list.append(layer_attn.float().to(x).transpose(1,0))
+
             if step is not None:
                 ds.append(d)
             #and self.training
             if layer_attn is not None and idx == alignment_layer:
                 attn = layer_attn.float().to(x)
+               
 
             # elif layer_attn is not None and not self.training:
             #     attn = layer_attn.float().to(x)
@@ -856,8 +867,6 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
             # average probabilities over heads
             attn = attn.mean(dim=0)
         
-            attn_list.append(attn)
-
         if self.layer_norm is not None:
             x = self.layer_norm(x)
 
@@ -870,8 +879,11 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
             # torch.cat(attn_list, dim=1) works with og GMA codebase where attn --> b x h x tlen x slen
             # but we have h x b x tlen x slen because of transpose in attn_weight before returning
             return (
+                # x,
+                # {"attn": torch.stack(attn_list, dim=0), "inner_states": inner_states},
+                # torch.cat(ds, dim=1),
                 x,
-                {"attn": torch.cat(attn_list, dim=0), "inner_states": inner_states},
+                {"attn": torch.cat(attn_list, dim=1), "inner_states": inner_states},
                 torch.cat(ds, dim=1),
             )
         else:

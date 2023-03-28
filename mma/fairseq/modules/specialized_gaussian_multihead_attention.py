@@ -19,7 +19,7 @@ import pdb
 
 
 @with_incremental_state
-class GaussianMultiheadAttention(nn.Module):
+class SpecializedGaussianMultiheadAttention(nn.Module):
     """Multi-headed attention.
 
     See "Attention Is All You Need" for more details.
@@ -89,8 +89,14 @@ class GaussianMultiheadAttention(nn.Module):
         projection_unit = self.embed_dim
         # self.wp = Parameter(torch.Tensor(self.embed_dim, projection_unit))
         # self.vp = Parameter(torch.Tensor(projection_unit, 1))
+
         self.wp = nn.Linear(self.embed_dim, projection_unit)
         self.vp = nn.Linear(projection_unit, 1)
+
+        # self.unit_wp = nn.Linear(self.head_dim, self.head_dim)
+        # self.unit_vp = nn.Linear(self.head_dim, 1)
+
+        self.dummy_specialization = {"prev":[],"current":[],"all":[]}
 
 
         self.delta = delta
@@ -118,11 +124,11 @@ class GaussianMultiheadAttention(nn.Module):
             nn.init.xavier_uniform_(self.v_proj.weight)
             nn.init.xavier_uniform_(self.q_proj.weight)
         
-        # nn.init.xavier_uniform_(self.vp)
-        # nn.init.xavier_uniform_(self.wp)
-
         nn.init.xavier_uniform_(self.vp.weight)
         nn.init.xavier_uniform_(self.wp.weight)
+
+        # nn.init.xavier_uniform_(self.unit_vp.weight)
+        # nn.init.xavier_uniform_(self.unit_wp.weight)
 
         nn.init.xavier_uniform_(self.out_proj.weight)
         if self.out_proj.bias is not None:
@@ -146,7 +152,7 @@ class GaussianMultiheadAttention(nn.Module):
         pre_d=None,
         before_softmax: bool = False,
         need_head_weights: bool = False,
-        delta=1.0,
+        specialized_heads={"prev":[],"current":[],"all":[]},
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
 
@@ -168,6 +174,9 @@ class GaussianMultiheadAttention(nn.Module):
         if need_head_weights:
             need_weights = True
         # if self.encoder_decoder_attention: pdb.set_trace()
+
+        
+        assert set(specialized_heads.keys()) == set(self.dummy_specialization.keys()), "Specialization keys don't match"
 
         is_tpu = query.device.type == "xla"
 
@@ -379,6 +388,7 @@ class GaussianMultiheadAttention(nn.Module):
                 attn_weights = attn_weights.masked_fill(key_padding_mask, float("-inf"))
                 attn_weights = attn_weights.transpose(0, 2)
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+
         # predict incremental step dp
         h = (
             q.contiguous()
@@ -390,7 +400,17 @@ class GaussianMultiheadAttention(nn.Module):
 
         # dp = torch.exp(torch.mm(torch.tanh(torch.mm(h, self.wp)), self.vp))
         dp = torch.exp(self.vp(torch.tanh(self.wp(h))))
-        
+
+        for head_id in range(self.num_heads):
+
+            dp = (
+                dp.contiguous()
+                .view(bsz, tgt_len)
+                .unsqueeze(1)
+            )
+
+            dp = torch.cat((torch.ones(dp.size(0), 1).type_as(dp), dp[:, 1:]), dim=1)
+
         dp = (
             dp.contiguous()
             .view(bsz, tgt_len)
@@ -400,7 +420,7 @@ class GaussianMultiheadAttention(nn.Module):
             .view(bsz * self.num_heads, tgt_len)
         )
         
-        dp = torch.cat((torch.zeros(dp.size(0), 1).type_as(dp), dp[:, 1:]), dim=1)
+        dp = torch.cat((torch.ones(dp.size(0), 1).type_as(dp), dp[:, 1:]), dim=1)
         
         # calculate the aligned source position p
 
@@ -412,11 +432,10 @@ class GaussianMultiheadAttention(nn.Module):
         #     .view(bsz * self.num_heads, tgt_len)
         #     .type_as(dp)
         # )
-
-        # p += dp #torch.cumsum(dp, dim=1)
+        # import ipdb;ipdb.set_trace()
         p = torch.cumsum(dp, dim=1)
         # Avoid p too small during training, for stable training
-        p = p.clamp(0.5, float(self.max_len))
+        p = p.clamp(0.9, float(self.max_len))
 
         # calculate the Gaussian distribution (prior)
         p = p.unsqueeze(2)
@@ -433,14 +452,6 @@ class GaussianMultiheadAttention(nn.Module):
         )
         # mask out the future source
         ends = (p + self.delta).ceil()
-
-        if step is not None:
-
-            if self.delta > 1.0:
-                ends = (p + delta).floor()
-            else:
-                ends = (p + delta).ceil()
-
         position_in_attended_cut = index_mask
         future_mask = position_in_attended_cut < ends
         alpha = torch.mul(alpha, future_mask.float())
@@ -475,9 +486,9 @@ class GaussianMultiheadAttention(nn.Module):
                 bsz, self.num_heads, tgt_len, src_len
             ).transpose(1, 0)
             # import ipdb; ipdb.set_trace()
-            # if not need_head_weights:
-                # average attention weights over heads
-                # attn_weights = attn_weights.mean(dim=0)
+            if not need_head_weights:
+                average attention weights over heads
+                attn_weights = attn_weights.mean(dim=0)
         # import ipdb; ipdb.set_trace()
         if step is not None:
             return attn, attn_weights, p

@@ -283,8 +283,8 @@ def _main(cfg: DictConfig, output_file):
         num_generated_tokens = sum(len(h[0]["tokens"]) for h in hypos)
         gen_timer.stop(num_generated_tokens)
 
-        import ipdb;ipdb.set_trace()
-        rws.extend([d201(g[i], src_lens[i]) for i in range(len(g))])
+        # import ipdb;ipdb.set_trace()
+        # rws.extend([d201(g[i], src_lens[i]) for i in range(len(g))])
 
         for i, sample_id in enumerate(sample["id"].tolist()):
             has_target = sample["target"] is not None
@@ -332,7 +332,7 @@ def _main(cfg: DictConfig, output_file):
 
             if not cfg.common_eval.quiet:
                 if src_dict is not None:
-                    print("S-{}\t{}".format(sample_id, src_str), file=output_file)
+                    print("S-{}\t{}\t{}".format(sample_id, src_lens[i], src_str), file=output_file)
                 if has_target:
                     print("T-{}\t{}".format(sample_id, target_str), file=output_file)
 
@@ -358,13 +358,28 @@ def _main(cfg: DictConfig, output_file):
                     )
                     # detokenized hypothesis
                     print(
-                        "D-{}\t{}\t{}".format(sample_id, score, detok_hypo_str),
+                        "D-{}\t{}\t{}\t{}".format(sample_id, len(hypo_tokens), score, detok_hypo_str),
                         file=output_file,
                     )
                     #print read-write actions
+                    action_seq = d201(g[i], src_lens[i], len(hypo_tokens))
+                    rws.extend([action_seq])
+                    print(
+                        "W-{}\t{}\t{}".format(
+                            sample_id, len(g[i]), g[i]
+                        ),
+                        file=output_file,
+                    )
                     print(
                         "RW-{}\t{}\t{}".format(
-                            sample_id, np.around(RW2AL(rws[i]), 2), rws[i]
+                            sample_id, np.around(RW2AL(action_seq), 2), action_seq
+                        ),
+                        file=output_file,
+                    )
+                    get_01(action_seq)
+                    print(
+                        "ST-{}\t{}\tR/W: {}\t S/T: {}, {}".format(
+                            sample_id, np.around(RW2AL(action_seq), 2), get_01(action_seq), src_lens[i], len(hypo_tokens)
                         ),
                         file=output_file,
                     )
@@ -489,15 +504,37 @@ def _main(cfg: DictConfig, output_file):
     return scorer
 
 
-def d201(d, src):
+# def d201(d, src):
+#     # print("+++",d)
+#     s = "0 " * int(d[0] + 1) + "1 "
+#     for i in range(1, len(d)):
+#         s = s + "0 " * int((min(d[i], src - 1) - min(d[i - 1], src - 1))) + "1 "
+#     if src > d[-1] + 1:
+#         s = s + "0 " * (src - d[-1] - 1)
+#     return s
+
+def d201(d, src, tgt):
     # print("+++",d)
-    s = "0 " * int(d[0] + 1) + "1 "
+    # src = src - 1
+    s = "0 " * int(d[0]) + "1 "
     for i in range(1, len(d)):
-        s = s + "0 " * int((min(d[i], src - 1) - min(d[i - 1], src - 1))) + "1 "
-    if src > d[-1] + 1:
-        s = s + "0 " * (src - d[-1] - 1)
+        s = s + "0 " * int((min(d[i], src) - min(d[i - 1], src))) 
+        zeros, ones = get_01(s) 
+        if ones <= tgt + 1:
+            s = s + "1 "
+    if src > d[-1]:
+        s = s + "0 " * int(src - d[-1])
     return s
 
+def get_01(s):
+    trantab = str.maketrans("RrWw", "0011")
+    if isinstance(s, str):
+        s = s.translate(trantab).replace(" ", "").replace(",", "")
+    else:
+        return -1, -1
+    x, y = s.count("0"), s.count("1")
+    
+    return x, y
 
 def generate_rw(src_len, tgt_len, k):
     rws = []
@@ -527,14 +564,14 @@ def generate_rw(src_len, tgt_len, k):
     return rws, gs
 
 
-def compute_delay(rw, is_weight_ave=False):
+def compute_delay(rw, is_weight_ave=False, add_eos=False):
     CWs, ALs, APs, DALs, Lsrc = [], [], [], [], []
     for line in rw:
         line = line.strip()
-        al_ans = RW2AL(line, add_eos=False)
-        dal_ans = RW2DAL(line, add_eos=False)
-        ap_ans = RW2AP(line, add_eos=False)
-        cw_ans = RW2CW(line, add_eos=False)
+        al_ans = RW2AL(line, add_eos=add_eos)
+        dal_ans = RW2DAL(line, add_eos=add_eos)
+        ap_ans = RW2AP(line, add_eos=add_eos)
+        cw_ans = RW2CW(line, add_eos=add_eos)
         if al_ans is not None:
             ALs.append(al_ans)
             DALs.append(dal_ans)
