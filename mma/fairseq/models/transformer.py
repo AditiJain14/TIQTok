@@ -354,10 +354,10 @@ class TransformerModel(FairseqEncoderDecoderModel):
                 lm_decoder = checkpoint_utils.load_pretrained_component_from_model(lm_decoder,model_path,"lm_decoder")
                 # freeze pretrained model
                 for param in lm_decoder.parameters():
-                    param.requires_grad = args.freeze_pretrained_lm
+                    param.requires_grad = not args.freeze_pretrained_lm
                 logger.info("Freeze pretrained LM weights: {}".format(args.freeze_pretrained_lm))
                 
-                if not args.freeze_pretrained_lm:
+                if args.freeze_pretrained_lm:
                     for k, p in decoder.named_parameters():
                         p.requires_grad = True
                     logger.info("Freezing pretrained LM weights.")
