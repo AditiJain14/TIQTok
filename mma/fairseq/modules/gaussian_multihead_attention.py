@@ -389,7 +389,8 @@ class GaussianMultiheadAttention(nn.Module):
             .contiguous()
             .view(bsz * self.num_heads, tgt_len)
         )
-        dp = torch.cat((torch.zeros(dp.size(0), 1).type_as(dp), dp[:, 1:]), dim=1)
+        # import ipdb;ipdb.set_trace()
+        dp = torch.cat((torch.ones(dp.size(0), 1).type_as(dp), dp[:, 1:]), dim=1)
         # calculate the aligned source position p
         p = torch.cumsum(dp, dim=1)
         # Avoid p too small during training, for stable training
@@ -408,18 +409,23 @@ class GaussianMultiheadAttention(nn.Module):
         alpha = torch.exp(
             -0.5 * torch.mul((p - index_mask) / varr, (p - index_mask) / varr)
         )
+        # import ipdb; ipdb.set_trace()
         # mask out the future source
         ends = (p + self.delta).ceil()
+        # import ipdb;ipdb.set_trace()
         position_in_attended_cut = index_mask
         future_mask = position_in_attended_cut < ends
         alpha = torch.mul(alpha, future_mask.float())
         attn_weights = attn_weights.masked_fill(~future_mask, float("-inf"))
         # if before_softmax:
         #     return attn_weights, v
+        # import ipdb; ipdb.set_trace()
 
+        # calculate the soft attention (likelihood)
         attn_weights_float = utils.softmax(
             attn_weights, dim=-1, onnx_trace=self.onnx_trace
         )
+
         # calculate the final attention (posterior)
         attn_weights = attn_weights_float.type_as(attn_weights)
         attn_weights = torch.mul(attn_weights, alpha)
@@ -437,19 +443,19 @@ class GaussianMultiheadAttention(nn.Module):
             attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
         attn = self.out_proj(attn) # [tgt_len, bsz, h_dim]
 
-        attn_weights: Optional[Tensor] = None
+        # attn_weights = None
 
         if need_weights:
-            attn_weights = attn_weights_float.view(
+            attn_weights = attn_weights.view(
                 bsz, self.num_heads, tgt_len, src_len
             ).transpose(1, 0)
-            # import ipdb; ipdb.set_trace()
+
             if not need_head_weights:
                 # average attention weights over heads
                 attn_weights = attn_weights.mean(dim=0)
         # import ipdb; ipdb.set_trace()
         if step is not None:
-            return attn, attn_weights, p
+            return attn, attn_weights, ends
         else:
             return attn, attn_weights, None
 

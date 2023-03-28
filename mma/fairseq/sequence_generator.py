@@ -325,6 +325,8 @@ class SequenceGenerator(nn.Module):
         src_lens = []
         source_length = net_input["src_lengths"]
 
+        index_mask_ = torch.arange(0, max_len, device="cuda")
+
         for step in range(max_len + 1):  # one extra step for EOS marker
             # reorder decoder internal states based on the prev choice of beams
             if reorder_state is not None:
@@ -347,7 +349,7 @@ class SequenceGenerator(nn.Module):
                 padding_length = padding_length.index_select(0, reorder_state)
                 source_length = source_length.index_select(0, reorder_state)
             # lprobs, avg_attn_scores, states
-            lprobs, attn_weight, d = self.model.forward_decoder(
+            lprobs, attn_weight, ends = self.model.forward_decoder(
                 tokens[:, : step + 1],
                 encoder_outs,
                 incremental_states,
@@ -361,16 +363,50 @@ class SequenceGenerator(nn.Module):
 
             # read = alpha[:, :, -1, :].max(dim=-1, keepdim=True)[1]
             # read = read.max(dim=1, keepdim=False)[0]
+            
+            # import ipdb;ipdb.set_trace()
+            # (lxh) x bsz x src_len
+            # attn_weight = attn_weight.transpose(0,1)
+            # read = (
+            #     (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=0,keepdim=False)[0].max(dim=1, keepdim=False)[0]
+            # ) 
+            
+            num_heads= self.model.single_model.args.decoder_attention_heads
+            layers = 6
 
+            attn_weight_lh = attn_weight.view(layers, bsz, num_heads, -1).view(bsz, layers*num_heads, -1)
+            # import ipdb;ipdb.set_trace()
             read = (
-                (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=True)[0]
+                (attn_weight_lh > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=False)[0]
             ) 
+            # (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=True)[0]
+            
+            # num_heads= self.model.single_model.args.decoder_attention_heads 
+            
+            # index_mask = (
+            # index_mask_[: max(source_length).item()]
+            # .unsqueeze(0)
+            # .unsqueeze(1)
+            # .repeat(bsz* num_heads, 1, 1)
+            # )
+
+            # upend = ends[:,-1,:].view(bsz, num_heads, -1)
+
+            # position_in_attended_cut = index_mask
+            # future_mask = position_in_attended_cut < ends
+            # up_future_mask = future_mask[:,-1,:].view(bsz, num_heads, -1)
+
+            # read2 = (
+            #     up_future_mask.sum(dim=-1, keepdim=True).max(dim=1, keepdim=False)[0]
+            # )
+
             # import ipdb;ipdb.set_trace()
             if reads is None:
                 reads = read
             else:
+                # import ipdb;ipdb.set_trace()
                 reads = torch.cat((reads, read), dim=1)
-
+            # import ipdb;ipdb.set_trace()
             if self.lm_model is not None:
                 lm_out = self.lm_model(tokens[:, : step + 1])
                 probs = self.lm_model.get_normalized_probs(
@@ -404,12 +440,20 @@ class SequenceGenerator(nn.Module):
 
             # Record attention scores, only support avg_attn_scores is a Tensor
             # import ipdb;ipdb.set_trace()
-            if attn_weight is not None:
-                if attn is None:
-                    attn = torch.empty(
-                        bsz * beam_size, attn_weight.size(1), max_len + 2
-                    ).to(scores)
-                attn[:, :, step + 1].copy_(attn_weight)
+
+            
+            if attn_weight.dim() > 2:
+                # for GMA SiMT attn_scores are not averaged, so setting attn=None
+                attn = None
+            
+            else:
+
+                if attn_weight is not None:
+                    if attn is None:
+                        attn = torch.empty(
+                            bsz * beam_size, attn_weight.size(1), max_len + 2
+                        ).to(scores)
+                    attn[:, :, step + 1].copy_(attn_weight)
 
             scores = scores.type_as(lprobs)
             eos_bbsz_idx = torch.empty(0).to(
@@ -474,6 +518,8 @@ class SequenceGenerator(nn.Module):
                     0, torch.LongTensor(finalized_sents)
                 )
                 finalized_rw.extend(finalized_reads.numpy().tolist())
+                # import ipdb;ipdb.set_trace()
+
                 src_lens.extend(
                     source_length.cpu()
                     .index_select(0, torch.LongTensor(finalized_sents))
@@ -673,6 +719,9 @@ class SequenceGenerator(nn.Module):
         ]  # skip the first index, which is EOS
 
         tokens_clone[:, step] = self.eos
+
+        # we dont need to output attention for SiMT
+        attn = None
         attn_clone = (
             attn.index_select(0, bbsz_idx)[:, :, 1 : step + 2]
             if attn is not None
@@ -838,7 +887,7 @@ class EnsembleModel(nn.Module):
                 encoder_out = encoder_outs[i]
             # decode each model
             if hasattr(model, "decoder"):
-                decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out,step=step)
+                decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out,step=step,)
                 # decoder_out = model.back_decoder.forward(tokens, encoder_out=encoder_out)
             else:
                 decoder_out = model.forward(tokens)
@@ -856,7 +905,8 @@ class EnsembleModel(nn.Module):
                 attn = attn.get("attn", None)
             # import ipdb; ipdb.set_trace()
             if attn is not None:
-                attn = attn[:, -1, :]
+                # attn = attn[:, :, :, -1, :]
+                attn = attn[:, :, -1, :]
 
             probs = model.get_normalized_probs(
                 decoder_out_tuple, log_probs=True, sample=None

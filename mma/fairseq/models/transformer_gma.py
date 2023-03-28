@@ -363,10 +363,10 @@ class TransformerGMAModel(FairseqEncoderDecoderModel):
                 lm_decoder = checkpoint_utils.load_pretrained_component_from_model(lm_decoder,model_path,"lm_decoder")
                 # freeze pretrained model
                 for param in lm_decoder.parameters():
-                    param.requires_grad = args.freeze_pretrained_lm
+                    param.requires_grad = not args.freeze_pretrained_lm
                 logger.info("Freeze pretrained LM weights: {}".format(args.freeze_pretrained_lm))
                 
-                if not args.freeze_pretrained_lm:
+                if args.freeze_pretrained_lm:
                     for k, p in decoder.named_parameters():
                         p.requires_grad = True
                     logger.info("Freezing pretrained LM weights.")
@@ -826,7 +826,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
                 self_attn_mask = self.buffered_future_mask(x)
             else:
                 self_attn_mask = None
-
+            #changing to return all layer attns at inference time
             x, layer_attn, d = layer(
                 x,
                 enc,
@@ -834,16 +834,20 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
                 incremental_state,
                 self_attn_mask=self_attn_mask,
                 self_attn_padding_mask=self_attn_padding_mask,
-                need_attn=bool((idx == alignment_layer)),
+                need_attn=bool((idx == alignment_layer)) if self.training else True, 
                 need_head_weights=bool((idx == alignment_layer)) if self.training else True,
                 step=step,
             )
+            #
+            # import ipdb;ipdb.set_trace()
             inner_states.append(x)
             if step is not None:
                 ds.append(d)
             #and self.training
-            if layer_attn is not None and idx == alignment_layer:
+            if layer_attn is not None and (idx == alignment_layer if self.training else True):
                 attn = layer_attn.float().to(x)
+                attn_list.append(attn.transpose(1, 0))    
+
 
             # elif layer_attn is not None and not self.training:
             #     attn = layer_attn.float().to(x)
@@ -856,7 +860,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
             # average probabilities over heads
             attn = attn.mean(dim=0)
         
-            attn_list.append(attn)
+            
 
         if self.layer_norm is not None:
             x = self.layer_norm(x)
@@ -873,6 +877,9 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
                 x,
                 {"attn": torch.cat(attn_list, dim=0), "inner_states": inner_states},
                 torch.cat(ds, dim=1),
+                #  x,
+                # {"attn": torch.stack(attn_list), "inner_states": inner_states},
+                # torch.cat(ds, dim=1),
             )
         else:
             return x, {"attn": [attn], "inner_states": inner_states}, None
