@@ -269,6 +269,13 @@ class TranslationConfig(FairseqDataclass):
     eval_bleu_print_samples: bool = field(
         default=False, metadata={"help": "print sample generations during validation"}
     )
+    # test time delta
+    test_delta: float = field(
+        default=0.1,
+        metadata={
+            "help": "test time delta for GMA runs "
+        },
+    )
 
 
 @register_task("translation", dataclass=TranslationConfig)
@@ -292,6 +299,8 @@ class TranslationTask(FairseqTask):
         super().__init__(cfg)
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
+        # test delta for GMA
+        self.test_delta = cfg.test_delta
 
     @classmethod
     def setup_task(cls, cfg: TranslationConfig, **kwargs):
@@ -434,6 +443,14 @@ class TranslationTask(FairseqTask):
                 logging_output["_bleu_totals_" + str(i)] = bleu.totals[i]
         
         return loss, sample_size, logging_output
+    
+    def inference_step(
+        self, generator, models, sample, prefix_tokens=None, constraints=None
+    ):
+        with torch.no_grad():
+            return generator.generate(
+                models, sample, prefix_tokens=prefix_tokens, constraints=constraints, delta=self.test_delta,
+            )
 
     def reduce_metrics(self, logging_outputs, criterion):
         super().reduce_metrics(logging_outputs, criterion)
