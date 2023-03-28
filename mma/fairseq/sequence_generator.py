@@ -369,43 +369,6 @@ class SequenceGenerator(nn.Module):
             # read = read.max(dim=1, keepdim=False)[0]
             
             # import ipdb;ipdb.set_trace()
-<<<<<<< HEAD
-            # (lxh) x bsz x src_len
-            # attn_weight = attn_weight.transpose(0,1)
-            # read = (
-            #     (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=0,keepdim=False)[0].max(dim=1, keepdim=False)[0]
-            # ) 
-            
-            num_heads= self.model.single_model.args.decoder_attention_heads
-            layers = 6
-
-            attn_weight_lh = attn_weight.view(layers, bsz, num_heads, -1).view(bsz, layers*num_heads, -1)
-            # import ipdb;ipdb.set_trace()
-            read = (
-                (attn_weight_lh > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=False)[0]
-            ) 
-            # (attn_weight > 0).sum(dim=-1, keepdim=True).max(dim=1, keepdim=True)[0]
-            
-            # num_heads= self.model.single_model.args.decoder_attention_heads 
-            
-            # index_mask = (
-            # index_mask_[: max(source_length).item()]
-            # .unsqueeze(0)
-            # .unsqueeze(1)
-            # .repeat(bsz* num_heads, 1, 1)
-            # )
-
-            # upend = ends[:,-1,:].view(bsz, num_heads, -1)
-
-            # position_in_attended_cut = index_mask
-            # future_mask = position_in_attended_cut < ends
-            # up_future_mask = future_mask[:,-1,:].view(bsz, num_heads, -1)
-
-            # read2 = (
-            #     up_future_mask.sum(dim=-1, keepdim=True).max(dim=1, keepdim=False)[0]
-            # )
-
-=======
 
             # attn_weight.shape = [layers x bsz, heads, src_len]
             layers = 6
@@ -447,7 +410,6 @@ class SequenceGenerator(nn.Module):
             # ) 
             # read = read.max(dim=0, keepdim=True)[0].transpose(0, 1)
             # import ipdb; ipdb.set_trace()
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
             # import ipdb;ipdb.set_trace()
             if reads is None:
                 reads = read
@@ -489,19 +451,9 @@ class SequenceGenerator(nn.Module):
             # Record attention scores, only support avg_attn_scores is a Tensor
             # import ipdb;ipdb.set_trace()
 
-<<<<<<< HEAD
-            
-            if attn_weight.dim() > 2:
-                # for GMA SiMT attn_scores are not averaged, so setting attn=None
-                attn = None
-            
-            else:
-
-=======
             if attn_weight.dim() > 2:
                 attn = None
             else:
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
                 if attn_weight is not None:
                     if attn is None:
                         attn = torch.empty(
@@ -944,11 +896,7 @@ class EnsembleModel(nn.Module):
                 encoder_out = encoder_outs[i]
             # decode each model
             if hasattr(model, "decoder"):
-<<<<<<< HEAD
-                decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out,step=step,)
-=======
                 decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out, step=step, delta=delta)
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
                 # decoder_out = model.back_decoder.forward(tokens, encoder_out=encoder_out)
             else:
                 decoder_out = model.forward(tokens)

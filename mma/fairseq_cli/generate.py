@@ -285,30 +285,8 @@ def _main(cfg: DictConfig, output_file):
         num_generated_tokens = sum(len(h[0]["tokens"]) for h in hypos)
         gen_timer.stop(num_generated_tokens)
 
-<<<<<<< HEAD
-        # rws.extend([d201(g[i], src_lens[i]) for i in range(len(g))])
-
-        for i in range(len(g)):
-                istep = int(g[i][0] + 1)
-                if istep in step_dict.keys():
-                    step_dict[istep] += 1
-                else:
-                    step_dict[istep] = 1
-
-                for j in range(1, len(g[i])):
-                    istep = int(
-                        (min(g[i][j], src_lens[i] - 1) - min(g[i][j - 1], src_lens[i] - 1))
-                    )
-
-                    if istep in step_dict.keys():
-                        step_dict[istep] += 1
-                    else:
-                        step_dict[istep] = 1
-
-=======
         # import ipdb;ipdb.set_trace()
         # rws.extend([d201(g[i], src_lens[i]) for i in range(len(g))])
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
 
         for i, sample_id in enumerate(sample["id"].tolist()):
             has_target = sample["target"] is not None
@@ -356,11 +334,7 @@ def _main(cfg: DictConfig, output_file):
 
             if not cfg.common_eval.quiet:
                 if src_dict is not None:
-<<<<<<< HEAD
-                    print("S-{}\t{}".format(sample_id, len(src_str.strip().split(' ')), src_str), file=output_file)
-=======
                     print("S-{}\t{}\t{}".format(sample_id, src_lens[i], src_str), file=output_file)
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
                 if has_target:
                     print("T-{}\t{}".format(sample_id, target_str), file=output_file)
 
@@ -394,20 +368,6 @@ def _main(cfg: DictConfig, output_file):
                     #     file=output_file,
                     # )
                     #print read-write actions
-<<<<<<< HEAD
-                    action_seq = d201(g[i], src_lens[i])
-                    rws.extend([action_seq])
-                    print(
-                        "G-{}\t{}\t{}\t{}".format(
-                            sample_id, np.around(RW2AL(action_seq), 2), len(g[i]), g[i]
-                        ),
-                        file=output_file,
-                    )
-                    
-                    print(
-                        "RW-{}\t{}\t{}".format(
-                            sample_id, np.around(RW2AL(action_seq), 2), action_seq,
-=======
                     action_seq = d201(g[i], src_lens[i], len(hypo_tokens))
                     rws.extend([action_seq])
                     print(
@@ -426,7 +386,6 @@ def _main(cfg: DictConfig, output_file):
                     print(
                         "ST-{}\t{}\tR/W: {}\t S/T: {}, {}".format(
                             sample_id, np.around(RW2AL(action_seq), 2), get_01(action_seq), src_lens[i], len(hypo_tokens)
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
                         ),
                         file=output_file,
                     )
@@ -554,20 +513,6 @@ def _main(cfg: DictConfig, output_file):
     return scorer
 
 
-<<<<<<< HEAD
-
-
-# def d201(d, src):
-#     # print("+++",d)
-#     s = "0 " * int(d[0] - 1) + "1 "
-#     for i in range(1, len(d)):
-#         s = s + "0 " * int((min(d[i], src - 1) - min(d[i - 1], src - 1))) + "1 "
-#     if src > d[-1]:
-#         s = s + "0 " * int(src - d[-1] - 1)
-#     return s
-
-def d201(d, src):
-=======
 # def d201(d, src):
 #     # print("+++",d)
 #     s = "0 " * int(d[0] + 1) + "1 "
@@ -578,18 +523,10 @@ def d201(d, src):
 #     return s
 
 def d201(d, src, tgt):
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
     # print("+++",d)
     # src = src - 1
     s = "0 " * int(d[0]) + "1 "
     for i in range(1, len(d)):
-<<<<<<< HEAD
-        s = s + "0 " * int((min(d[i], src - 1) - min(d[i - 1], src - 1))) + "1 "
-    if src > d[-1]+1:
-        s = s + "0 " * (src - d[-1] - 1)
-    return s
-
-=======
         s = s + "0 " * int((min(d[i], src) - min(d[i - 1], src))) 
         zeros, ones = get_01(s) 
         if ones <= tgt + 1:
@@ -608,7 +545,6 @@ def get_01(s):
     
     return x, y
 
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
 def generate_rw(src_len, tgt_len, k):
     rws = []
     gs = []

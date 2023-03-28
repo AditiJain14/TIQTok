@@ -839,13 +839,8 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
                 incremental_state,
                 self_attn_mask=self_attn_mask,
                 self_attn_padding_mask=self_attn_padding_mask,
-<<<<<<< HEAD
-                need_attn=bool((idx == alignment_layer)) if self.training else True, 
-                need_head_weights=bool((idx == alignment_layer)) if self.training else True,
-=======
                 need_attn=bool((idx == alignment_layer)) if self.training else True,
                 need_head_weights=bool((idx == alignment_layer)) if self.training else False,
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
                 step=step,
                 delta=delta,
             )
@@ -861,12 +856,7 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
             #and self.training
             if layer_attn is not None and (idx == alignment_layer if self.training else True):
                 attn = layer_attn.float().to(x)
-<<<<<<< HEAD
-                attn_list.append(attn.transpose(1, 0))    
-
-=======
                
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
 
             # elif layer_attn is not None and not self.training:
             #     attn = layer_attn.float().to(x)
@@ -879,11 +869,6 @@ class TransformerDecoderGMA(FairseqIncrementalDecoder):
             # average probabilities over heads
             attn = attn.mean(dim=0)
         
-<<<<<<< HEAD
-            
-
-=======
->>>>>>> 494013d6700dc194504c1e54a0e9213a0c6637df
         if self.layer_norm is not None:
             x = self.layer_norm(x)
 
