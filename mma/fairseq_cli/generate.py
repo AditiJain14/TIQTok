@@ -374,6 +374,15 @@ def _main(cfg: DictConfig, output_file):
                         ),
                         file=output_file,
                     )
+                    action_seq = d201(g[i], src_lens[i])
+                    print(
+                        "R-{}\t{}\t{}".format(
+                            sample_id, np.around(RW2AL(action_seq), 2), action_seq,
+                        ),
+                        file=output_file,
+                    )
+                    print("A-",hypo['attention'].tolist())
+                    # print("Attention averaged-",alignment.mean(dim=0).tolist())
 
                     if cfg.generation.print_alignment == "hard":
                         print(

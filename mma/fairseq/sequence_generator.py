@@ -352,6 +352,13 @@ class SequenceGenerator(nn.Module):
                 incremental_states,
                 self.temperature,
             )
+
+            avg_attn_scores = avg_attn_scores[:,-1,:]
+
+            beta_list = [
+                states["attn_list"][i]["beta"] for i in range(len(states["attn_list"]))
+            ]
+            beta = torch.cat(beta_list, dim=1)
             attn_list = [
                 states["attn_list"][i]["alpha"] for i in range(len(states["attn_list"]))
             ]
@@ -395,6 +402,7 @@ class SequenceGenerator(nn.Module):
                 # minimum length constraint (does not apply if using prefix_tokens)
                 lprobs[:, self.eos] = -math.inf
 
+            # import ipdb;ipdb.set_trace()
             # Record attention scores, only support avg_attn_scores is a Tensor
             if avg_attn_scores is not None:
                 if attn is None:
@@ -459,6 +467,7 @@ class SequenceGenerator(nn.Module):
                     finished,
                     beam_size,
                     attn,
+                    beta,
                     src_lengths,
                     max_len,
                 )
@@ -644,6 +653,7 @@ class SequenceGenerator(nn.Module):
         finished: List[bool],
         beam_size: int,
         attn: Optional[Tensor],
+        beta,
         src_lengths,
         max_len: int,
     ):
@@ -731,7 +741,8 @@ class SequenceGenerator(nn.Module):
                         "tokens": tokens_clone[i],
                         "score": score,
                         "attention": hypo_attn,  # src_len x tgt_len
-                        "alignment": torch.empty(0),
+                        "alignment": beta[0],
+                         # "alignment": torch.empty(0),
                         "positional_scores": pos_scores[i],
                     }
                 )
@@ -834,7 +845,9 @@ class EnsembleModel(nn.Module):
             else:
                 decoder_out = model.forward(tokens)
 
-            attn: Optional[Tensor] = None
+            assert  len(decoder_out[-1]['attn_list'][-1].keys()) == 3, "Expected keys dict_keys(['alpha', 'beta', 'p_choose'])"
+
+            attn: Optional[Tensor] = decoder_out[-1]['attn_list'][-1]['beta'].mean(dim=1) # avg attn along heads (attn = bsz, heads, tgt, src)
             decoder_len = len(decoder_out)
 
             decoder_out_tuple = (

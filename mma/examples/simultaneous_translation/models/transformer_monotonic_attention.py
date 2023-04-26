@@ -290,6 +290,7 @@ class TransformerMonotonicDecoder(TransformerDecoder):
             "step_list": step_list,
             "encoder_out": encoder_out,
             "encoder_padding_mask": encoder_padding_mask,
+            # "self-attn": None,
         }
 
     def reorder_incremental_state(self, incremental_state, new_order):
