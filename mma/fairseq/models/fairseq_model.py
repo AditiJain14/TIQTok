@@ -271,6 +271,13 @@ class BaseFairseqModel(nn.Module):
             archive_map=cls.hub_models(),
             **kwargs,
         )
+        # x = hub_utils.from_pretrained_aditi(
+        #     model_name_or_path,
+        #     checkpoint_file,
+        #     data_name_or_path,
+        #     archive_map=cls.hub_models(),
+        #     **kwargs,
+        # )
         logger.info(x["args"])
         return hub_utils.GeneratorHubInterface(x["args"], x["task"], x["models"])
 

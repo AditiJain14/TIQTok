@@ -417,7 +417,7 @@ def load_model_ensemble_and_task(
                 raise RuntimeError(
                     f"Neither args nor cfg exist in state keys = {state.keys()}"
                 )
-
+            # import ipdb;ipdb.set_trace()
             if task is None:
                 task = tasks.setup_task(cfg.task)
 

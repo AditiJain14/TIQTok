@@ -9,7 +9,7 @@ import copy
 import logging
 import os
 from typing import Any, Dict, Iterator, List
-
+from fairseq.models.transformer import TransformerDecoder
 import torch
 from fairseq import utils
 from fairseq.data import encoders
@@ -81,6 +81,79 @@ def from_pretrained(
         "models": models,
     }
 
+def from_pretrained_aditi(
+    model_name_or_path,
+    checkpoint_file="model.pt",
+    data_name_or_path=".",
+    archive_map=None,
+    **kwargs
+):
+    from fairseq import checkpoint_utils, file_utils
+
+    if archive_map is not None:
+        if model_name_or_path in archive_map:
+            model_name_or_path = archive_map[model_name_or_path]
+        if data_name_or_path is not None and data_name_or_path in archive_map:
+            data_name_or_path = archive_map[data_name_or_path]
+
+        # allow archive_map to set default arg_overrides (e.g., tokenizer, bpe)
+        # for each model
+        if isinstance(model_name_or_path, dict):
+            for k, v in model_name_or_path.items():
+                if k == "checkpoint_file":
+                    checkpoint_file = v
+                elif (
+                    k != "path"
+                    # only set kwargs that don't already have overrides
+                    and k not in kwargs
+                ):
+                    kwargs[k] = v
+            model_name_or_path = model_name_or_path["path"]
+
+    model_path = file_utils.load_archive_file(model_name_or_path)
+
+    # convenience hack for loading data and BPE codes from model archive
+    if data_name_or_path.startswith("."):
+        kwargs["data"] = os.path.abspath(os.path.join(model_path, data_name_or_path))
+    else:
+        kwargs["data"] = file_utils.load_archive_file(data_name_or_path)
+    for file, arg in {
+        "code": "bpe_codes",
+        "bpecodes": "bpe_codes",
+        "sentencepiece.bpe.model": "sentencepiece_model",
+        "merges.txt": "bpe_merges",
+        "vocab.json": "bpe_vocab",
+    }.items():
+        path = os.path.join(model_path, file)
+        if os.path.exists(path):
+            kwargs[arg] = path
+
+    if "user_dir" in kwargs:
+        utils.import_user_module(argparse.Namespace(user_dir=kwargs["user_dir"]))
+    
+    # import ipdb;ipdb.set_trace()
+    models, args, task = checkpoint_utils.load_model_ensemble_and_task(
+        [os.path.join(model_path, cpt) for cpt in checkpoint_file.split(os.pathsep)],
+        arg_overrides=kwargs,
+    )
+    
+    import ipdb;ipdb.set_trace()
+    lm_decoder = TransformerDecoder(kwargs,tgt_dict,
+                                            lm_decoder_embed_tokens,
+                                            no_encoder_attn=True,
+                                            output_projection=lm_decoder_softmax_weight
+                                            )
+    lm_decoder = checkpoint_utils.load_pretrained_component_from_model(lm_decoder,model_path,"lm_decoder")
+    
+    task = tasks.setup_task(args.task)
+
+
+    return {
+        "args": args,
+        "task": task,
+        "models": lm_decoder,
+    }
+
 
 class GeneratorHubInterface(nn.Module):
     """
@@ -128,9 +201,24 @@ class GeneratorHubInterface(nn.Module):
     ) -> List[str]:
         if isinstance(sentences, str):
             return self.sample([sentences], beam=beam, verbose=verbose, **kwargs)[0]
+        
+        # import ipdb;ipdb.set_trace()
         tokenized_sentences = [self.encode(sentence) for sentence in sentences]
         batched_hypos = self.generate(tokenized_sentences, beam, verbose, **kwargs)
         return [self.decode(hypos[0]["tokens"]) for hypos in batched_hypos]
+    
+    def sample_with_score(
+        self, sentences: List[str], beam: int = 1, verbose: bool = False, **kwargs
+    ) -> List[str]:
+        if isinstance(sentences, str):
+            return self.sample_with_score([sentences], beam=beam, verbose=verbose, **kwargs)[0]
+        
+        # import ipdb;ipdb.set_trace()
+        tokenized_sentences = [self.encode(sentence) for sentence in sentences]
+        batched_hypos, ll_probs, hypoths = self.generate(tokenized_sentences, beam, verbose, **kwargs)
+        # import ipdb;ipdb.set_trace()
+        # return [self.decode(hypos[0]["tokens"]) for hypos in batched_hypos]
+        return batched_hypos, ll_probs, hypoths
 
     def score(self, sentences: List[str], **kwargs):
         if isinstance(sentences, str):
@@ -188,13 +276,26 @@ class GeneratorHubInterface(nn.Module):
 
             def getarg(name, default):
                 return getattr(gen_args, name, getattr(self.cfg, name, default))
-
+            ll_probs = []
+            hypoths = []
             for source_tokens, target_hypotheses in zip(tokenized_sentences, outputs):
                 src_str_with_unk = self.string(source_tokens)
                 logger.info("S\t{}".format(src_str_with_unk))
+                # import ipdb;ipdb.set_trace()
                 for hypo in target_hypotheses:
+                    hypo = hypo[0]
                     hypo_str = self.decode(hypo["tokens"])
                     logger.info("H\t{}\t{}".format(hypo["score"], hypo_str))
+                    hpths = "{}".format(hypo_str)
+                    hypoths.append(hpths)
+                    llp = "{}".format(
+                            " ".join(
+                                map(
+                                    lambda x: "{:.4f}".format(x),
+                                    hypo["positional_scores"].tolist(),
+                                )
+                            ))
+                    ll_probs.append(llp)
                     logger.info(
                         "P\t{}".format(
                             " ".join(
@@ -218,7 +319,7 @@ class GeneratorHubInterface(nn.Module):
                                 )
                             )
                         )
-        return outputs
+        return outputs, ll_probs, hypoths
 
     def encode(self, sentence: str) -> torch.LongTensor:
         sentence = self.tokenize(sentence)
@@ -251,7 +352,8 @@ class GeneratorHubInterface(nn.Module):
         return sentence
 
     def binarize(self, sentence: str) -> torch.LongTensor:
-        return self.src_dict.encode_line(sentence, add_if_not_exist=False).long()
+        # return self.src_dict.encode_line(sentence, add_if_not_exist=False).long()
+        return self.tgt_dict.encode_line(sentence, add_if_not_exist=False).long()
 
     def string(self, tokens: torch.LongTensor) -> str:
         return self.tgt_dict.string(tokens)
