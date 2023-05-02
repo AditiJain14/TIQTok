@@ -412,7 +412,7 @@ class GaussianMultiheadAttention(nn.Module):
         #     .view(bsz * self.num_heads, tgt_len)
         #     .type_as(dp)
         # )
-
+        # import ipdb;ipdb.set_trace()
         # p += dp #torch.cumsum(dp, dim=1)
         p = torch.cumsum(dp, dim=1)
         # Avoid p too small during training, for stable training
@@ -438,9 +438,9 @@ class GaussianMultiheadAttention(nn.Module):
         if step is not None:
 
             if self.delta > 1.0:
-                ends = (p + delta).floor()
+                ends = (p + self.delta).floor()
             else:
-                ends = (p + delta).ceil()
+                ends = (p + self.delta).ceil()
 
         position_in_attended_cut = index_mask
         future_mask = position_in_attended_cut < ends
