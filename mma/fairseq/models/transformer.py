@@ -215,9 +215,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
                 '--offload-activations are passed.'
             )
         )
-        # dual path args
-        parser.add_argument('--single-path', action='store_true', default=False,
-                            help='if True, dont spwan a backward enc+dec')
+       
         # lm args
         parser.add_argument('--add-language-model', action='store_true', default=False,
                             help='if True, spwan a Transformer decoder for an LM.')
@@ -284,11 +282,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
             args.checkpoint_activations = True  # offloading implies checkpointing
         encoder = cls.build_encoder(args, src_dict, encoder_embed_tokens)
         decoder = cls.build_decoder(args, tgt_dict, decoder_embed_tokens)
-        back_encoder = None
-        back_decoder = None
-        if not args.single_path:
-            back_encoder = cls.build_encoder(args, tgt_dict, decoder_embed_tokens)
-            back_decoder = cls.build_decoder(args, src_dict, encoder_embed_tokens)
+  
         if not args.share_all_embeddings:
             min_params_to_wrap = getattr(
                 args, "min_params_to_wrap", DEFAULT_MIN_PARAMS_TO_WRAP
@@ -296,11 +290,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
             # fsdp_wrap is a no-op when --ddp-backend != fully_sharded
             encoder = fsdp_wrap(encoder, min_num_params=min_params_to_wrap)
             decoder = fsdp_wrap(decoder, min_num_params=min_params_to_wrap)
-            back_encoder = None
-            back_decoder = None
-            if not args.single_path:
-                back_encoder = fsdp_wrap(back_encoder, min_num_params=min_params_to_wrap)
-                back_decoder = fsdp_wrap(back_decoder, min_num_params=min_params_to_wrap)
+  
+            
         
         # auxuliary LM for adaptive training
         lm_decoder = None
@@ -363,7 +354,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
                     logger.info("Freezing pretrained LM weights.")
 
             
-        return cls(args, encoder, decoder, back_encoder, back_decoder, lm_decoder)
+        return cls(args, encoder, decoder,lm_decoder)
 
     @classmethod
     def build_embedding(cls, args, dictionary, embed_dim, path=None):
@@ -399,7 +390,6 @@ class TransformerModel(FairseqEncoderDecoderModel):
         prev_output_tokens,
         return_all_hiddens: bool = True,
         features_only: bool = False,
-        dual: bool = True,
         lm_out:bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
@@ -423,53 +413,6 @@ class TransformerModel(FairseqEncoderDecoderModel):
             return_all_hiddens=return_all_hiddens,
         )
 
-        back_data = process_back_data(src_tokens, src_lengths, prev_output_tokens)
-
-        back_decoder_out = []
-        dual_path_dist = None
-
-        # dual is True by default
-        # if dual is False, this will be a single model
-        if dual:
-            import ipdb; ipdb.set_trace()
-            assert self.back_encoder is not None and self.back_decoder is not None, \
-            "Trying to compute backward_model loss but Backward Enc/Dec is None."
-
-            back_encoder_out = self.back_encoder(
-                back_data["src_tokens"],
-                src_lengths=back_data["src_lengths"],
-                return_all_hiddens=return_all_hiddens,
-            )
-            back_decoder_out = self.back_decoder(
-                back_data["prev_output_tokens"],
-                encoder_out=back_encoder_out,
-                features_only=features_only,
-                alignment_layer=alignment_layer,
-                alignment_heads=alignment_heads,
-                src_lengths=src_lengths,
-                return_all_hiddens=return_all_hiddens,
-            )
-
-            forward_alpha = decoder_out[1]["attn_list"][0]["alpha"]
-            backward_alpha = back_decoder_out[1]["attn_list"][0]["alpha"]
-
-            bsz, num_heads, tgt_len, src_len = forward_alpha.size()
-
-            forward_gamma = (
-                generate_dual_path(backward_alpha.contiguous().view(-1, src_len, tgt_len))
-                .contiguous()
-                .view(bsz, num_heads, tgt_len, src_len)
-            )
-            backward_gamma = (
-                generate_dual_path(forward_alpha.contiguous().view(-1, tgt_len, src_len))
-                .contiguous()
-                .view(bsz, num_heads, src_len, tgt_len)
-            )
-
-            dual_path_dist = torch.dist(forward_alpha, forward_gamma, p=2) + torch.dist(
-                backward_alpha, backward_gamma, p=2
-            )
-        
         # auxiliary language model
         lm_decoder_out = None
         if self.lm_decoder is not None and lm_out:
@@ -482,7 +425,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
             return_all_hiddens=return_all_hiddens,
         )
 
-        return decoder_out, back_decoder_out, dual_path_dist, back_data, lm_decoder_out
+        return decoder_out, lm_decoder_out
 
     # Since get_normalized_probs is in the Fairseq Model which is not scriptable,
     # I rewrite the get_normalized_probs from Base Class to call the
