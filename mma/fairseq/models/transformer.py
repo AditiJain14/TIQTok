@@ -108,8 +108,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         }
         # fmt: on
 
-    def __init__(self, args, encoder, decoder, back_encoder, back_decoder, lm_decoder):
-        super().__init__(encoder, decoder, back_encoder, back_decoder, lm_decoder)
+    def __init__(self, args, encoder, decoder,lm_decoder):
+        super().__init__(encoder, decoder,lm_decoder)
         self.args = args
         self.supports_align_args = True
  
@@ -351,7 +351,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
                     logger.info("Freezing pretrained LM weights.")
 
             
-        return cls(args, encoder, decoder,lm_decoder)
+        return cls(args,encoder,decoder,lm_decoder)
 
     @classmethod
     def build_embedding(cls, args, dictionary, embed_dim, path=None):

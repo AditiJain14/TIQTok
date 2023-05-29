@@ -294,7 +294,7 @@ class FairseqEncoderDecoderModel(BaseFairseqModel):
         decoder (FairseqDecoder): the decoder
     """
 
-    def __init__(self, encoder, decoder, back_encoder, back_decoder, lm_decoder):
+    def __init__(self, encoder, decoder,lm_decoder):
         super().__init__()
 
         self.encoder = encoder

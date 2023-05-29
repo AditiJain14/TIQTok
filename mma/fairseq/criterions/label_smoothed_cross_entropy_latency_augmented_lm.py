@@ -72,7 +72,6 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
             label_smoothing,
             ignore_prefix_size,
             report_accuracy,
-            dual_weight,
         )
         self.eps = label_smoothing
         self.lm_eps = lm_label_smoothing
@@ -153,7 +152,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         """
 
         # TODO: handle this to avoid malicious behaviour
-        net_output, lm_net_output = model(**sample["net_input"], dual=dual_path, lm_out=self.training)
+        net_output, lm_net_output = model(**sample["net_input"], lm_out=self.training)
 
         # get forward model loss
         # lm_loss = torch.Tensor([0.0])
