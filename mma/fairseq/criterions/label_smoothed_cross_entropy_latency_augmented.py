@@ -26,7 +26,6 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterion(
         latency_weight_var_type,
         mass_preservation,
         average_method,
-        dual_weight,
     ):
         super().__init__(
             task,
@@ -34,7 +33,6 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterion(
             label_smoothing,
             ignore_prefix_size,
             report_accuracy,
-            dual_weight,
         )
         from examples.simultaneous_translation.utils.latency import LatencyTraining
         self.num_updates=-1
