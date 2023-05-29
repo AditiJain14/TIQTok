@@ -58,7 +58,6 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         latency_weight_var_type,
         mass_preservation,
         average_method,
-        dual_weight,
         train_only_lm,
         lm_label_smoothing=0.1,
         token_scale=0.0,
@@ -152,11 +151,9 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
         2) the sample size, which is used as the denominator for the gradient
         3) logging outputs to display while training
         """
-        dual_path = True if self.dual_weight == 1.0 else False
 
-        # if dual_path is False, dual_loss will be None
         # TODO: handle this to avoid malicious behaviour
-        net_output, back_net_output, dual_loss, back_data, lm_net_output = model(**sample["net_input"], dual=dual_path, lm_out=self.training)
+        net_output, lm_net_output = model(**sample["net_input"], dual=dual_path, lm_out=self.training)
 
         # get forward model loss
         # lm_loss = torch.Tensor([0.0])
@@ -184,29 +181,7 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
             loss, nll_loss = super().compute_loss(model, net_output, sample, reduce=reduce)
             
 
-        # compute backward only if dual_path is set to true
-        # TODO: make the changes backward compatible
-        if dual_path:
-            # dual_loss is None when dual=False
-            assert dual_loss is not None, "dual_loss is None. Check model's forward method when dual=True."
-
-            # prepare backward sample
-            back_sample = {}
-            back_sample["id"] = sample["id"].contiguous()
-            back_sample["nsentences"] = sample["nsentences"]
-            back_sample["ntokens"] = (sample["net_input"]["src_tokens"] > 1).sum()
-            back_sample["net_input"] = back_data
-            back_sample["target"] = sample["net_input"]["src_tokens"].contiguous()
-
-            # get backward model loss
-            back_loss, back_nll_loss = self.compute_loss(
-                model, back_net_output, back_sample, reduce=reduce
-            )
-
-            loss = loss + back_loss + self.dual_weight * dual_loss
-
-        
-        nll_loss = nll_loss #+ back_nll_loss
+       
 
         sample_size = (
             sample["target"].size(0) if self.sentence_avg else sample["ntokens"]
@@ -214,18 +189,6 @@ class LatencyAugmentedLabelSmoothedCrossEntropyCriterionCBMI(LabelSmoothedCrossE
 
         num_tokens = sample["ntokens"]
         num_sentences = sample["target"].size(0)
-
-        if dual_path:
-            back_sample_size = (
-                back_sample["target"].size(0)
-                if self.sentence_avg
-                else back_sample["ntokens"]
-            )
-
-            sample_size = sample_size + back_sample_size
-            num_tokens = num_tokens + back_sample["ntokens"]
-            num_sentences = num_sentences + back_sample["target"].size(0)
-
         logging_output = {
             "loss": loss.data,
             "nll_loss": nll_loss.data,
