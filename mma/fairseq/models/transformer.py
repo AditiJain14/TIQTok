@@ -32,8 +32,7 @@ from fairseq.modules import (
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
-from fairseq.modules.dual_path import generate_dual_path
-from fairseq.modules.dual_path import process_back_data
+
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
@@ -113,9 +112,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         super().__init__(encoder, decoder, back_encoder, back_decoder, lm_decoder)
         self.args = args
         self.supports_align_args = True
-        # self.back_encoder = back_encoder
-        # self.back_decoder = back_decoder
-        # self.lm_decoder = lm_decoder
+ 
 
     @staticmethod
     def add_args(parser):
