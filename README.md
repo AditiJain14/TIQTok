@@ -142,7 +142,7 @@ multi-bleu.perl -lc ${ref} < pred.translation
 
 ## Our Results
 
-The numerical results on IWSLT14 English-to-Vietnamese:
+The numerical results on IWSLT15 English-to-Vietnamese:
 
 | **latency weight** | **AP** | **AL** | **DAL** | **BLEU** |
 | :----------------: | :----: | :----: | :-----: | :------: |
