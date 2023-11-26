@@ -142,7 +142,7 @@ multi-bleu.perl -lc ${ref} < pred.translation
 
 ## Our Results
 
-The numerical results on WMT15 German-to-English:
+The numerical results on IWSLT14 English-to-Vietnamese:
 
 | **latency weight** | **AP** | **AL** | **DAL** | **BLEU** |
 | :----------------: | :----: | :----: | :-----: | :------: |
@@ -159,7 +159,7 @@ More results please refer to the paper.
 
 ## Citation
 
-In this repository is useful for you, please cite as:
+If this repository is useful for you, please cite as:
 
 ```
 @inproceedings{jain-etal-2023-language,
