@@ -1,5 +1,5 @@
 # Language Model Based Target Token Importance Rescaling for Simultaneous Neural Machine Translation
-Code implementation of our IWSLT 2023 paper [pdf](https://aclanthology.org/2023.iwslt-1.32/), implemented with the open-source toolkit [Fairseq](https://github.com/pytorch/fairseq).
+Code implementation of our IWSLT 2023 [paper](https://aclanthology.org/2023.iwslt-1.32/), implemented with the open-source toolkit [Fairseq](https://github.com/pytorch/fairseq).
 
 
 
@@ -12,7 +12,7 @@ Code implementation of our IWSLT 2023 paper [pdf](https://aclanthology.org/2023.
 - Install fairseq:
 
   ```bash
-  git clone [https://github.com/ictnlp/Dual-Path.git](https://github.com/AditiJain14/TIQTok.git)
+  git clone https://github.com/AditiJain14/TIQTok.git
   cd TIQTok/mma
   pip install --editable ./
   ```
@@ -47,14 +47,13 @@ fairseq-preprocess --source-lang ${src} --target-lang ${tgt} \
 
 ### Training
 
-Train the Dual Paths SiMT with the following command:
+Train the TIQ SiMT with the following command:
 
-- For IWSLT15 English-Vietnamese: we set ***latency weight*** = 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5.
-- For WMT15 German-English: we set ***latency weight*** = 0.1, 0.2, 0.25, 0.3, 0.4.
-- ***dual weight*** is set to 1.0 for 'Dual Paths', and set to 0.0 for 'Single Path'.
+- For IWSLT15 English-Vietnamese: we set ***latency weight*** = 0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.55.
+- For other datasets, we use ***latency weight*** = 0.01, 0.1, 0.2, 0.3, 0.4.
 
 ```bash
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 data=PATH_TO_DATA
 modelfile=PATH_TO_SAVE_MODEL
 lambda=LATENCY_WEIGHT
