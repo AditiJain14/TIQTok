@@ -53,13 +53,31 @@ Train the TIQ SiMT with the following command:
 - For other datasets, we use ***latency weight*** = 0.01, 0.1, 0.2, 0.3, 0.4.
 
 ```bash
-export CUDA_VISIBLE_DEVICES=0,1,2,3
-data=PATH_TO_DATA
-modelfile=PATH_TO_SAVE_MODEL
-lambda=LATENCY_WEIGHT
+    ROOT="path/to/working/dir"
 
-python train.py  --ddp-backend=no_c10d ${data} --arch transformer_monotonic_iwslt_de_en --share-all-embeddings \
-    --user-dir ./examples/simultaneous_translation \
+    DATA="${ROOT}/data/vi_en/data-bin"
+
+    EXPT="${ROOT}/experiments/en_vi"
+    mkdir -p ${EXPT}
+
+    FAIRSEQ="${ROOT}/mma"
+
+    USR="./examples/simultaneous_translation"
+
+    lambda=$1
+    # name="single_path_latency_${lambda}"
+    name="lmloss_latency_0.1_0.2_${lambda}"
+    export WANDB_NAME="${name}"
+
+    CKPT="${EXPT}/infinite/${name}/checkpoints"
+    TBOARD="${EXPT}/infinite/${name}/logs"
+    mkdir -p ${CKPT} ${TBOARD}
+
+    python ${FAIRSEQ}/train.py  --ddp-backend=no_c10d ${DATA} \
+    --source-lang en --target-lang vi \
+    --log-format simple --log-interval 50 \
+    --arch transformer_monotonic_iwslt_de_en \
+    --user-dir "${USR}" \
     --simul-type infinite_lookback \
     --mass-preservation \
     --optimizer adam \
@@ -71,17 +89,28 @@ python train.py  --ddp-backend=no_c10d ${data} --arch transformer_monotonic_iwsl
     --warmup-init-lr 1e-07 \
     --warmup-updates 4000 \
     --dropout 0.3 \
-    --criterion latency_augmented_label_smoothed_cross_entropy \
+    --criterion latency_augmented_label_smoothed_cross_entropy_cbmi \
     --label-smoothing 0.1 \
-    --encoder-attention-heads 8 \
-    --decoder-attention-heads 8 \
-    --max-update 180000 \
+    --encoder-attention-heads 4 \
+    --decoder-attention-heads 4 \
+    --max-update 100000 \
     --latency-weight-avg  ${lambda} \
     --noise-var 1.5 \
     --left-pad-source \
-    --dual-weight 1.0 \
-    --save-dir ${modelfile} \
-    --max-tokens 2400 --update-freq 4
+    --single-path \
+    --dual-weight 0.0 \
+    --save-dir $CKPT \
+    --max-tokens 4500 --update-freq 3 \
+    --best-checkpoint-metric "ppl" \
+    --keep-last-epochs 25 \
+    --add-language-model \
+    --share-lm-decoder-softmax-embed \
+    --pretrain-steps 3000 \
+    --token-scale 0.1 --sentence-scale 0.2 \
+    --wandb-project LM_Adaptive_EnVi \
+    --empty-cache-freq 45 --max-epoch 50\
+    | tee -a ${TBOARD}/train_log.txt
+
 ```
 
 ### Inference
